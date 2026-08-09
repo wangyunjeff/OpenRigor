@@ -11,7 +11,7 @@
     "smoke:api": "tsx scripts/smoke-api.ts",
     "smoke:codex": "tsx scripts/smoke-codex-app-server.ts",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @openrigor/protocol test",
+    "test": "pnpm -r --if-present test",
     "build": "pnpm -r build"
   },
   "devDependencies": {

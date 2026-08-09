@@ -14,3 +14,4 @@ infra/data/
 infra/minio/
 output/playwright/
 .playwright-cli/
+.tmp-npm-playwright/

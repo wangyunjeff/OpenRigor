@@ -10,8 +10,8 @@ This repository is the implementation workspace created from the ClawsGO public-
 
 - Research baseline: complete. Read [the full technical report](docs/TECHNICAL_REPORT.md).
 - Working local alpha: real Codex app-server execution, streamed answers/reasoning/tools/files, SSE replay, and stop/interrupt.
-- Interface: an original AI-native operator console using Radix interaction primitives, Lucide icons, GFM Markdown, and AI Elements-style reasoning/tool/activity composition.
-- Scope: one local user and one configured workspace. Runs/events are still process-memory only; attachments, approvals, follow-up turns, and durable history are not implemented yet.
+- Interface: an original desktop-first operator console with preview-before-send examples, model/effort controls, knowledge and skill selectors, structured reasoning/tool output, and a browser-side recent-task list.
+- Scope: one local user and one configured workspace. Recent-task references persist in the browser, but runs/events are still process-memory only; attachments, approvals, follow-up turns, and durable server history are not implemented yet.
 - Production execution: intentionally not enabled. A hosted release still needs the durable worker and sandbox boundary described in the architecture docs.
 
 ## Start the local Codex alpha

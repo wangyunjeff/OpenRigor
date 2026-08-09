@@ -166,7 +166,11 @@ export function validateRunRequest(value: unknown): RunRequest {
   if (candidate.mode === "standard" || candidate.mode === "cluster") request.mode = candidate.mode;
   if (candidate.effort === "fast" || candidate.effort === "balanced" || candidate.effort === "deep") request.effort = candidate.effort;
   if (typeof candidate.workspaceId === "string" && candidate.workspaceId.trim()) request.workspaceId = candidate.workspaceId.trim();
-  if (typeof candidate.clientRequestId === "string" && candidate.clientRequestId.trim()) request.clientRequestId = candidate.clientRequestId.trim();
+  if (typeof candidate.clientRequestId === "string" && candidate.clientRequestId.trim()) {
+    const clientRequestId = candidate.clientRequestId.trim();
+    if (clientRequestId.length > 200) throw new Error("clientRequestId exceeds 200 characters");
+    request.clientRequestId = clientRequestId;
+  }
 
   if (Array.isArray(candidate.attachments)) {
     request.attachments = candidate.attachments.filter(isAttachmentRef);

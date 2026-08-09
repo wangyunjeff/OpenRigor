@@ -1,13 +1,25 @@
 const baseUrl = process.argv[2] ?? "http://127.0.0.1:8787";
 const prompt = process.argv[3] ?? "Reply with exactly OPENRIGOR_API_READY. Do not use tools.";
+const clientRequestId = `smoke_${crypto.randomUUID()}`;
+const requestBody = JSON.stringify({ prompt, clientRequestId });
 
 const startResponse = await fetch(`${baseUrl}/api/runs`, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ prompt })
+  body: requestBody
 });
 if (!startResponse.ok) throw new Error(`start failed: ${startResponse.status}`);
 const accepted = (await startResponse.json()) as { runId: string };
+
+const replayResponse = await fetch(`${baseUrl}/api/runs`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: requestBody
+});
+if (!replayResponse.ok) throw new Error(`replay failed: ${replayResponse.status}`);
+const replayed = (await replayResponse.json()) as { runId: string };
+if (replayed.runId !== accepted.runId) throw new Error(`duplicate submit created a second run: ${accepted.runId} != ${replayed.runId}`);
+if (replayResponse.headers.get("idempotency-replayed") !== "true") throw new Error("duplicate submit was not marked as replayed");
 
 const streamResponse = await fetch(`${baseUrl}/api/runs/${accepted.runId}/events`);
 if (!streamResponse.ok || !streamResponse.body) throw new Error(`stream failed: ${streamResponse.status}`);

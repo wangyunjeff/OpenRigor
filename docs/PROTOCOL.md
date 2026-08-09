@@ -12,7 +12,8 @@ Content-Type: application/json
   "prompt": "Summarize the attached papers",
   "model": "auto",
   "mode": "standard",
-  "effort": "balanced"
+  "effort": "balanced",
+  "clientRequestId": "web_01J..."
 }
 ```
 
@@ -55,6 +56,7 @@ data: {"eventId":"run_01:4","runId":"run_01","sequence":4,"ts":"2026-08-09T12:00
 - Unknown event types must be ignored but logged.
 - Event order is guaranteed only within one `runId` and `sequence`.
 - Delivery is at least once; consumers must be idempotent.
+- `clientRequestId` is optional and scoped to the current API process in the local alpha; repeating a `POST /api/runs` with the same key replays the original `runId` instead of starting another run. Production must move this index into the durable control plane.
 - Payloads must never contain provider secrets, session cookies, or raw sandbox credentials.
 - Additive fields are compatible; changing a field's meaning requires a protocol version.
 

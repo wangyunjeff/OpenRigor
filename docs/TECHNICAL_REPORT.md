@@ -1,11 +1,30 @@
-# ClawsGO Science 1:1 功能复刻技术尽调报告
+# ClawsGO 功能等价复刻与 OpenRigor 技术尽调报告
 
-**调研快照：2026-08-09（Asia/Shanghai）**  
-**目标：从公司立项视角，判断 ClawsGO 的真实技术构成、AIcss 的关系，以及实现功能等价产品所需的技术、团队与路线。**
+**外部调研快照：2026-08-09（Asia/Shanghai）**
+
+**OpenRigor 实施状态：2026-08-10（桌面端优先的单用户本地 alpha）**
+
+**目标：从公司立项视角，判断 ClawsGO 的真实技术构成、AIcss 的关系，并记录功能等价产品所需的技术、当前实现和演进路线。**
 
 > 本报告所说的“1:1 复刻”是功能、工作流和交付能力等价，不建议复制 ClawsGO 的商标、文案、视觉资产、客户端源码或受保护的界面表达。ClawsGO 的公开条款明确保留软件、界面和品牌权利，并限制逆向工程。推荐采用 clean-room（洁净室）方式：一组人只编写公开行为规格，另一组人基于规格独立实现。
 
 ## 一、给管理层的结论
+
+### 当前执行口径
+
+OpenRigor 已经不是静态界面稿。当前版本先把老板本人可用的最小闭环做实，再向云端多租户平台演进：
+
+| 层 | 当前已经实现 | 当前明确没有声称实现 |
+|---|---|---|
+| Agent 运行时 | 启动本机已登录的 Codex app-server，通过 stdio JSON-RPC 发起 thread/turn，并支持 `turn/interrupt` | 自研多 Agent 编排、远程沙箱、服务端模型路由 |
+| 实时协议 | 将 Codex 增量通知适配为 OpenRigor `RunEvent`，浏览器通过 SSE 展示文本、reasoning、工具、文件和完成态 | PostgreSQL 事件持久化、跨进程恢复、生产级队列 |
+| 首屏工作流 | 任务分类与案例；案例必须经过“预览 -> 确认 -> 填入输入框 -> 编辑 -> 手动发送” | 点击案例后自动执行 |
+| 运行设置 | Composer 内的模式、模型和推理强度分级菜单；当前执行模式固定为单 Agent 标准模式 | Agent 集群已可用 |
+| 任务上下文 | 可选择本地知识上下文、技能和自定义指令，并在发起任务时投影为 Codex 请求指令 | 完整知识库索引、向量检索、Skill 安装与版本治理 |
+| 提交可靠性 | Composer 启动锁、`clientRequestId` 幂等提交、最近任务回读和当前 SSE/历史请求竞态隔离 | 跨进程幂等存储、持久队列和全局重试策略 |
+| 桌面界面 | 240px 侧栏、可回看的本地最近任务、居中阅读列、底部常驻 Composer、结构化执行过程、GFM Markdown、停止和“跳到最新” | 服务端持久历史、ClawsGO 的源码、商标、品牌资产或像素级视觉复制 |
+
+因此，当前版本的产品定义是“本机 Codex 的高质量可视化任务工作台”，不是已经完成的 ClawsGO 云平台。这个边界可以让第一版尽快可用，同时保持 `RunEvent`/SSE 合约，后续再替换为持久控制面和隔离 worker。
 
 ### 1. 最重要的判断
 
@@ -30,6 +49,8 @@ ClawsGO 不是“套一层聊天 UI 的大模型 API”。它是下面五套系�
 - ClawsGO 的域名、公开预览和首次部署时间早于 AIcss 域名注册。
 
 **管理层可采用的表述：AIcss 可以帮助我们更快做出一部分聊天表现层，但它不是 ClawsGO 的核心，也不能显著缩短云 Agent 平台的主体研发。**
+
+OpenRigor 当前也没有把 AIcss 当作依赖。实现层使用 Radix UI、Lucide React、React Markdown 与自有 CSS tokens；Vercel AI Elements 和 prompt-kit 只用于研究 AI 交互的组件边界与状态组织，不复制其品牌表达，也不接管 OpenRigor 的运行时状态。
 
 ### 3. 能否复刻
 
@@ -282,13 +303,18 @@ wss://api.clawsgo.ai/terminal/ws
 ### 4.1 新任务启动台
 
 - 按科研、专业服务、工程、运营、管理、创作展示任务案例。
-- 文本、附件、工作区文件、模型、模式、effort 与 `/` 技能选择。
+- 案例点击后先打开确认弹层，展示完整任务草稿和执行上下文；“使用这个案例”只把草稿填入 Composer 并聚焦输入框，不发起请求。用户编辑后仍需手动发送。
+- Composer 将“模型 · 推理强度”合并为一个紧凑入口，再通过模式、模型、推理强度三级菜单完成选择；不可用的 Agent 集群以禁用态明确标注。
+- 知识上下文、技能和自定义指令有独立选择面板；已选项以可移除 chip 回到 Composer，发送时才进入本次请求。
+- 当前本地 alpha 已支持文本、工作区上下文、模型、模式、effort、`/` 技能选择和 `@` 上下文选择；附件上传和可预览的真实文件投递仍未落地。
 - 任务提交后生成持久 conversation UUID。
 - 支持 Auto 路由和直接指定模型。
 
 ### 4.2 长任务与 Agent 轨迹
 
 - text、reasoning、tool、file、citation、Todo、Goal、Workflow、Subagent 分段流式展示。
+- 当前本地 alpha 已将 reasoning、工具输出、文件和 diff 投影为可展开的行式步骤流，Agent 最终回复保持无卡片阅读面。
+- 自动滚动只在用户接近底部时跟随；用户上滚阅读历史后停止抢滚，并提供“跳到最新”。
 - 后续消息可排队，也可立即打断当前运行。
 - 支持停止、继续、压缩上下文、长效 Goal。
 - 网络恢复后重新同步运行中任务。
@@ -401,7 +427,7 @@ turn/completed
 
 API 将这些通知翻译为版本化 `RunEvent`，再经 SSE 发送给浏览器；停止任务调用 `turn/interrupt`。实测已经覆盖文本流、reasoning、Shell 工具、用量、完成态和取消态。Codex 登录凭证只由本地子进程读取，不进入浏览器事件或前端配置。
 
-当前边界必须明确：这是“老板自己先用”的本地运行时，不是生产隔离方案。线程和 OpenRigor 事件仍保存在进程内存中；工作目录由服务端环境变量固定；审批 UI 尚未接入；附件、多轮续聊和重启恢复仍待实现。托管版仍需按本报告后续章节迁移到持久队列、独立 worker、PostgreSQL 事件表和受控沙箱。
+当前边界必须明确：这是“老板自己先用”的本地运行时，不是生产隔离方案。线程和 OpenRigor 事件仍保存在进程内存中；侧栏最近任务只在浏览器 `localStorage` 保存 run 引用，并通过 `GET /api/runs/:runId` 回读，因此 API 重启后不构成持久历史。工作目录由服务端环境变量固定；审批 UI 尚未接入；附件、多轮续聊和重启恢复仍待实现。托管版仍需按本报告后续章节迁移到持久队列、独立 worker、PostgreSQL 事件表和受控沙箱。
 
 ### 5.1.2 当前前端组件策略
 
@@ -410,33 +436,47 @@ API 将这些通知翻译为版本化 `RunEvent`，再经 SSE 发送给浏览器
 | 方案 | 适配度 | 结论 |
 |---|---:|---|
 | shadcn/ui + Radix | 高 | 最适合做工作台基础层；源码可控、无障碍和弹层行为成熟 |
-| Vercel AI Elements | 高 | 最适合选择性吸收 AI 对话、推理、工具、终端和 Artifact 组件 |
+| Vercel AI Elements | 高 | 参考 Conversation、Reasoning、Tool、Terminal 和 Artifact 的展示边界，不引入其运行时 |
+| prompt-kit | 高 | 参考 Composer、消息和流式状态的紧凑组合方式，不复制主题或整套源码 |
 | assistant-ui | 中 | 完整线程 runtime 很强，但当前会与 `RunEvent` 形成双重状态，暂缓 |
 | AIcss | 中 | 可购买少量视觉源码做参考，但不承担协议、状态和运行时 |
 | Magic UI / Aceternity / React Bits | 低 | 更适合营销页和演示动效，容易让生产工作台显得花哨，不作为主组件层 |
 
-第一版不再继续扩张手写交互组件，采用下面的分层：
+第一版采用下面的分层：
 
 | 层 | 当前选型 | 用法 |
 |---|---|---|
-| 无头交互原语 | Radix UI | Dropdown Menu、Collapsible、Tooltip；负责键盘、焦点、Portal 和弹层定位 |
-| AI 表现结构 | Vercel AI Elements 的组件边界 | 按 Conversation、Reasoning、Tool、Terminal、Artifact 组织本地组件，但继续消费 OpenRigor `RunEvent` |
+| 无头交互原语 | Radix UI | Dropdown Menu、Dialog、Collapsible、Tooltip；负责键盘、焦点、Portal 和弹层定位 |
+| AI 表现结构 | OpenRigor 本地组件 | 参考 AI Elements/prompt-kit 的边界，按 Conversation、Reasoning、Tool、Terminal、Artifact 组织，但继续消费 OpenRigor `RunEvent` |
 | 图标 | Lucide React | 全部工具、导航、状态和按钮图标 |
 | Markdown | React Markdown + remark-gfm | 流式回复中的标题、列表、表格、链接、引用和代码 |
-| 主题 | OpenRigor 自有 CSS tokens | 中性石墨背景、克制的紫丁香主色和语义状态色，不复制第三方品牌资产 |
+| 主题 | OpenRigor 自有 CSS tokens | 中性石墨背景、暖铜色克制点缀和语义状态色，不复制第三方品牌资产 |
 
-AI Elements 是构建在 shadcn/ui 之上的源码组件库，适合借用 AI 界面的展示边界；它不是 Agent runtime。OpenRigor 当前后端已经有 `RunEvent`/SSE 状态模型，所以不能为了套组件把数据层改成 `useChat`。事件仍按下面的方式投影：
+AI Elements 和 prompt-kit 适合研究 AI 界面的展示边界，但都不是 OpenRigor 的 Agent runtime。当前后端已经有 `RunEvent`/SSE 状态模型，因此不能为了套组件把数据层改成另一套 `useChat` 或线程 runtime。事件仍按下面的方式投影：
 
 ```text
 EventSource
   -> eventId 去重和 RunSnapshot 投影
   -> text / reasoning / tool / file / diff 视图模型
-  -> AI Elements 风格的展示组件
+  -> OpenRigor 本地展示组件
 ```
 
 暂不接入 `assistant-ui` runtime。它适合完整聊天线程、重试、分支、编辑和附件，但现在引入会让它的线程状态与 OpenRigor 的 run 状态并存，形成双重状态管理。等 M1 完成持久消息、续聊和重试协议后，再评估用 `ExternalStoreRuntime` 对接。
 
-当前代码已经接入 Radix Dropdown Menu、Collapsible、Tooltip、Lucide 和 GFM Markdown；首屏、运行态、工具输出、完成态均已用真实 Codex 任务做过桌面截图检查。后续优先补 Artifact/CodeBlock、审批确认和附件，不安装 AI Elements 全家桶。
+当前桌面界面采用 240px 固定侧栏、60px 顶栏、672px 新任务内容区，以及 768px 对话/Composer 上限。主工作区在桌面上以 12px 外边距内缩并使用 20px 圆角，形成参考站同类的应用画布；移动端恢复满屏。Agent 回复是无框阅读面，reasoning、工具、文件和 diff 投影为结构化步骤组；不设置右侧 Inspector，避免把主要任务压成狭窄三栏。视觉使用 `#1d1d1d` 主背景、`#1a1a1a` 侧栏、`#252525` 表面和 `#e4a274` 暖铜强调，主要状态再分别使用蓝、绿、金、红。案例卡使用 16px 圆角，Composer 使用 20px 桌面圆角，菜单和执行组通过更清晰的表面、边框和状态对比建立层级。
+
+当前交互闭环如下：
+
+```text
+任务案例 -> Radix Dialog 结果预览 -> 用户确认 -> 仅预填并聚焦 Composer
+        -> 用户编辑 -> 手动发送 -> POST /api/runs -> EventSource 展示 RunEvent
+```
+
+案例弹层采用 576px 桌面宽度和大比例结果预览区，预览内容由本地 CSS 结果图形组成，不引入 ClawsGO 截图或品牌资产；确认操作只改变 Composer 草稿，关闭时焦点返回实际触发按钮。
+
+模型入口使用 Radix 三级子菜单组织“模式 / 模型 / 推理强度”；知识上下文、技能和偏好通过 Dialog 选择，选中项在 Composer 中可见并可移除。技能目录目前覆盖浏览器、前端、文档、PDF、演示文稿、表格、论文分析、网页测试、图像生成和技能创建等 Codex 工作流，并支持搜索和滚动浏览。这里必须保留实现边界：当前“知识”和“技能”是本地选项及请求前置指令，尚不是服务端知识摄取、向量检索、Skill 包安装或权限系统；自定义指令只保存在当前浏览器 `localStorage`。
+
+当前代码已经接入 Radix Dropdown Menu、Dialog、Collapsible、Tooltip、Lucide 和 GFM Markdown，并实现浏览器侧最近任务列表、活动任务高亮与按 run id 回读。后续优先补 Artifact/CodeBlock、审批确认、附件、多轮续聊和服务端持久历史；不安装 AI Elements 或 prompt-kit 全家桶，也不让第三方组件反向决定协议。
 
 ### 5.2 控制面数据模型
 
@@ -537,6 +577,16 @@ type RunEvent =
 - 休眠时快照持久盘，根文件系统重置；重建模板不应删除用户产物。
 
 ## 六、分阶段实施路线
+
+### 当前本地 alpha：核心交互闭环
+
+这条实施线服务于单用户先用起来，不替代下面的云产品 Phase 0：
+
+- 真实 Codex app-server 运行与 `RunEvent`/SSE 流已贯通。
+- 案例预览确认、预填编辑、模型/effort 选择、知识上下文、Skills/偏好、停止、过程展示和浏览器侧最近任务回读已进入桌面工作台。
+- 提交链路已增加发送启动锁与 `clientRequestId` 幂等键；历史任务恢复和 SSE 回调只接受当前视图、当前 run 的结果，避免重复任务和旧响应污染。
+- 下一步应先补审批、附件、多轮续聊和持久历史，再把 API/worker/数据库/沙箱边界拆开。
+- 只有任务跨浏览器、API 和 worker 重启仍可恢复时，才算达到下面 Phase 0 的 durable 验收，不应把内存态 alpha 对外称为云端 MVP。
 
 ### Phase 0：洁净室规格与技术验证（2-3 周）
 
@@ -706,6 +756,17 @@ AIcss 不提供：
 - [AIcss Registry](https://www.aicss.dev/r)
 - [AIcss AI Agent Input](https://www.aicss.dev/components/ai-agent-input)
 - [AIcss Pricing](https://www.aicss.dev/pricing)
+
+### OpenRigor 实现与组件参考
+
+- [OpenAI Codex app-server 源码](https://github.com/openai/codex/tree/main/codex-rs/app-server)
+- [Radix Primitives](https://www.radix-ui.com/primitives)
+- [Lucide](https://lucide.dev/)
+- [React Markdown](https://github.com/remarkjs/react-markdown)
+- [Vercel AI Elements](https://ai-sdk.dev/elements/overview)
+- [prompt-kit](https://github.com/ibelick/prompt-kit)
+
+后两项仅是组件结构与交互研究参考，不能据此声称 OpenRigor 安装、派生自或运行在这些库之上，也不能据此推断 ClawsGO 使用它们。
 
 ### 当前构建的技术证据（哈希以后可能变化）
 

@@ -20,6 +20,7 @@ import {
   type CodexAppServerClient,
   type CodexNotification
 } from "./codex-app-server.js";
+import { getOrCreateIdempotent } from "./idempotency.js";
 
 const port = Number.parseInt(process.env.PORT ?? "8787", 10);
 const allowedOrigins = new Set(
@@ -61,6 +62,7 @@ interface RunRecord {
 }
 
 const runs = new Map<string, RunRecord>();
+const runsByClientRequestId = new Map<string, RunRecord>();
 
 function timestamp(): string {
   return new Date().toISOString();
@@ -563,20 +565,23 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
   publishFinished(record, "completed", undefined, record.codexUsage);
 }
 
-function createRun(request: RunRequest): RunRecord {
-  const runId = `run_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
-  const record: RunRecord = {
-    snapshot: createInitialSnapshot(runId, request),
-    events: [],
-    listeners: new Set(),
-    cancelRequested: false,
-    codexTools: new Map()
-  };
-  runs.set(runId, record);
-  publish(record, { ...baseEvent(record, "snapshot"), type: "snapshot", snapshot: record.snapshot });
-  const execution = codexClient ? executeCodexRun(record, codexClient) : executeDemoRun(record);
-  void execution.catch((error: unknown) => publishExecutorFailure(record, codexClient ? "CODEX_EXECUTOR_ERROR" : "EXECUTOR_ERROR", error));
-  return record;
+function createRun(request: RunRequest): { record: RunRecord; replayed: boolean } {
+  const result = getOrCreateIdempotent(request.clientRequestId, runsByClientRequestId, () => {
+    const runId = `run_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+    const record: RunRecord = {
+      snapshot: createInitialSnapshot(runId, request),
+      events: [],
+      listeners: new Set(),
+      cancelRequested: false,
+      codexTools: new Map()
+    };
+    runs.set(runId, record);
+    publish(record, { ...baseEvent(record, "snapshot"), type: "snapshot", snapshot: record.snapshot });
+    const execution = codexClient ? executeCodexRun(record, codexClient) : executeDemoRun(record);
+    void execution.catch((error: unknown) => publishExecutorFailure(record, codexClient ? "CODEX_EXECUTOR_ERROR" : "EXECUTOR_ERROR", error));
+    return record;
+  });
+  return { record: result.value, replayed: result.replayed };
 }
 
 function connectEvents(req: IncomingMessage, res: ServerResponse, runId: string): void {
@@ -644,7 +649,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (req.method === "POST" && url.pathname === "/api/runs") {
     try {
       const request = validateRunRequest(await readJson(req));
-      const record = createRun(request);
+      const { record, replayed } = createRun(request);
+      if (replayed) res.setHeader("Idempotency-Replayed", "true");
       sendJson(res, 202, { runId: record.snapshot.runId, status: record.snapshot.status, eventsUrl: `/api/runs/${record.snapshot.runId}/events` });
     } catch (error: unknown) {
       sendJson(res, 400, { error: error instanceof Error ? error.message : "invalid request" });

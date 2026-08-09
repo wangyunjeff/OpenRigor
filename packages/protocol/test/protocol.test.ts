@@ -16,3 +16,11 @@ test("rejects an empty prompt and identifies terminal states", () => {
   assert.equal(isTerminalStatus("completed"), true);
   assert.equal(isTerminalStatus("running"), false);
 });
+
+test("normalizes and bounds the client request id used for idempotency", () => {
+  assert.equal(validateRunRequest({ prompt: "test", clientRequestId: "  web_123  " }).clientRequestId, "web_123");
+  assert.throws(
+    () => validateRunRequest({ prompt: "test", clientRequestId: "x".repeat(201) }),
+    /clientRequestId exceeds 200 characters/
+  );
+});
