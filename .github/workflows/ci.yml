@@ -24,3 +24,14 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: API SSE smoke
+        shell: bash
+        run: |
+          pnpm --filter @openrigor/api start > /tmp/openrigor-api.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid"' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8787/healthz > /dev/null; then break; fi
+            sleep 0.25
+          done
+          pnpm smoke:api

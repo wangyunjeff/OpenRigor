@@ -7,6 +7,7 @@
   "scripts": {
     "dev:api": "pnpm --filter @openrigor/api dev",
     "dev:web": "pnpm --filter @openrigor/web dev",
+    "smoke:api": "tsx scripts/smoke-api.ts",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @openrigor/protocol test",
     "build": "pnpm -r build"

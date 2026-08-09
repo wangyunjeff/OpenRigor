@@ -39,6 +39,12 @@ pnpm test
 pnpm build
 ```
 
+With the API running, the protocol smoke check can be repeated from another terminal:
+
+```powershell
+pnpm smoke:api
+```
+
 ## Repository map
 
 ```text
