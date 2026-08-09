@@ -1,9 +1,10 @@
 const baseUrl = process.argv[2] ?? "http://127.0.0.1:8787";
+const prompt = process.argv[3] ?? "Reply with exactly OPENRIGOR_API_READY. Do not use tools.";
 
 const startResponse = await fetch(`${baseUrl}/api/runs`, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ prompt: "protocol smoke test" })
+  body: JSON.stringify({ prompt })
 });
 if (!startResponse.ok) throw new Error(`start failed: ${startResponse.status}`);
 const accepted = (await startResponse.json()) as { runId: string };

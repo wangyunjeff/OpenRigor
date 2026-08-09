@@ -4,6 +4,8 @@
 
 OpenRigor accepts untrusted prompts and, eventually, untrusted files and code. The API process is a control-plane component and must never execute arbitrary user commands. All tool execution belongs in a separately managed sandbox.
 
+The current `codex-app-server` executor is an explicit local-alpha exception for one trusted operator: it starts the signed-in Codex process on the same machine and fixes its working directory and sandbox policy through server-side configuration. It must not be exposed to untrusted users or treated as the hosted production boundary. The browser never receives the Codex credential, and unexpected approval/input requests are declined.
+
 ## Required controls before production
 
 - Tenant and workspace authorization on every read and write.

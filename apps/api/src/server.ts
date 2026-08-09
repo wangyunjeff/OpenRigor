@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { resolve } from "node:path";
 import { URL } from "node:url";
 import {
   PROTOCOL_VERSION,
@@ -14,6 +15,11 @@ import {
   type RunStatus,
   type ToolCall
 } from "@openrigor/protocol";
+import {
+  createCodexAppServerClientFromEnv,
+  type CodexAppServerClient,
+  type CodexNotification
+} from "./codex-app-server.js";
 
 const port = Number.parseInt(process.env.PORT ?? "8787", 10);
 const allowedOrigins = new Set(
@@ -23,6 +29,23 @@ const allowedOrigins = new Set(
     .filter(Boolean)
 );
 const maxBodyBytes = 256 * 1024;
+const executor = (process.env.OPENRIGOR_EXECUTOR ?? "demo").trim().toLowerCase();
+const codexClient = executor === "codex-app-server" ? createCodexAppServerClientFromEnv() : null;
+const codexCwd = resolve(process.env.OPENRIGOR_CODEX_CWD?.trim() || process.cwd());
+const codexSandbox = parseCodexSandbox(process.env.OPENRIGOR_CODEX_SANDBOX);
+const codexApprovalPolicy = parseCodexApprovalPolicy(process.env.OPENRIGOR_CODEX_APPROVAL_POLICY);
+
+function parseCodexSandbox(value: string | undefined): "read-only" | "workspace-write" | "danger-full-access" {
+  if (value === "read-only" || value === "danger-full-access" || value === "workspace-write") return value;
+  return "workspace-write";
+}
+
+function parseCodexApprovalPolicy(value: string | undefined): "untrusted" | "on-request" | "never" {
+  if (value === "untrusted" || value === "on-request" || value === "never") return value;
+  // The first local integration has no approval UI yet. `never` keeps a run
+  // from hanging while still honoring the app-server sandbox policy.
+  return "never";
+}
 
 type EventListener = (event: RunEvent) => void;
 
@@ -31,6 +54,10 @@ interface RunRecord {
   events: RunEvent[];
   listeners: Set<EventListener>;
   cancelRequested: boolean;
+  codexThreadId?: string;
+  codexTurnId?: string;
+  codexTools: Map<string, ToolCall>;
+  codexUsage?: { inputTokens?: number; outputTokens?: number; providerRequestId?: string };
 }
 
 const runs = new Map<string, RunRecord>();
@@ -113,13 +140,19 @@ function publishTextDelta(record: RunRecord, partId: string, kind: "text" | "rea
   publish(record, { ...baseEvent(record, "part-delta"), type: "part-delta", partId, kind, delta });
 }
 
-function publishFinished(record: RunRecord, status: Extract<RunStatus, "completed" | "failed" | "cancelled">, error?: { code: string; message: string }): void {
+function publishFinished(
+  record: RunRecord,
+  status: Extract<RunStatus, "completed" | "failed" | "cancelled">,
+  error?: { code: string; message: string },
+  usage?: { inputTokens?: number; outputTokens?: number; providerRequestId?: string }
+): void {
   const base = baseEvent(record, "run-finished");
   const event: RunEvent = {
     ...base,
     type: "run-finished",
     status,
-    ...(error === undefined ? {} : { error })
+    ...(error === undefined ? {} : { error }),
+    ...(usage === undefined ? {} : { usage })
   };
   publish(record, event);
 }
@@ -149,6 +182,284 @@ function delay(ms: number): Promise<void> {
 
 function isCancelled(record: RunRecord): boolean {
   return record.cancelRequested || isTerminalStatus(record.snapshot.status);
+}
+
+function codexRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function codexString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function codexNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function codexFlattenText(value: unknown, depth = 0): string {
+  if (depth > 5 || value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map((item) => codexFlattenText(item, depth + 1)).filter(Boolean).join("\n");
+  if (typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const direct = typeof record.text === "string" ? record.text : "";
+  if (direct) return direct;
+  for (const key of ["content", "summary", "parts", "message"]) {
+    const nested = codexFlattenText(record[key], depth + 1);
+    if (nested) return nested;
+  }
+  return "";
+}
+
+function safeCodexText(value: unknown, maxLength = 4_000): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  // Keep obvious credentials out of the browser event stream. This is a
+  // lightweight local guard, not a replacement for production secret scanning.
+  const redacted = value
+    .replace(/sk-[A-Za-z0-9_-]{16,}/g, "[REDACTED]")
+    .replace(/(api[_-]?key|authorization|token)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
+  return redacted.length > maxLength ? `${redacted.slice(0, maxLength)}...` : redacted;
+}
+
+function publishCodexStatus(record: RunRecord, status: RunStatus, options: { progress?: number; currentStep?: string }): void {
+  const progress = options.progress === undefined ? record.snapshot.progress : Math.max(record.snapshot.progress, options.progress);
+  const sameStatus = record.snapshot.status === status;
+  const sameStep = options.currentStep === undefined || record.snapshot.currentStep === options.currentStep;
+  if (sameStatus && sameStep && progress === record.snapshot.progress) return;
+  publishStatus(record, status, {
+    progress,
+    ...(options.currentStep === undefined ? {} : { currentStep: options.currentStep })
+  });
+}
+
+function codexEffort(request: RunRequest): string {
+  const configured = process.env.OPENRIGOR_CODEX_EFFORT?.trim();
+  if (configured) return configured;
+  if (request.effort === "fast") return "low";
+  if (request.effort === "deep") return "max";
+  return "medium";
+}
+
+function codexItemId(item: Record<string, unknown>): string | undefined {
+  return codexString(item.id);
+}
+
+function codexToolInfo(item: Record<string, unknown>): { name: string; inputSummary?: string } | null {
+  const type = codexString(item.type);
+  if (!type) return null;
+  if (type === "commandExecution") {
+    const command = safeCodexText(item.command, 600);
+    const info: { name: string; inputSummary?: string } = { name: "command.execute" };
+    if (command !== undefined) info.inputSummary = command;
+    return info;
+  }
+  if (type === "fileChange") {
+    const changes = Array.isArray(item.changes) ? item.changes : [];
+    const paths = changes.map((change) => codexString(codexRecord(change)?.path)).filter((path): path is string => path !== undefined);
+    const info: { name: string; inputSummary?: string } = { name: "file.change" };
+    if (paths.length > 0) info.inputSummary = paths.join(", ");
+    return info;
+  }
+  if (type === "webSearch") {
+    const query = safeCodexText(item.query, 600);
+    const info: { name: string; inputSummary?: string } = { name: "web.search" };
+    if (query !== undefined) info.inputSummary = query;
+    return info;
+  }
+  if (type === "mcpToolCall") {
+    const server = codexString(item.server) ?? "mcp";
+    const tool = codexString(item.tool) ?? "tool";
+    const info: { name: string; inputSummary?: string } = { name: `${server}.${tool}` };
+    const inputSummary = item.arguments === undefined ? undefined : safeCodexText(JSON.stringify(item.arguments), 800);
+    if (inputSummary !== undefined) info.inputSummary = inputSummary;
+    return info;
+  }
+  if (type === "dynamicToolCall") {
+    const namespace = codexString(item.namespace);
+    const tool = codexString(item.tool) ?? "tool";
+    const info: { name: string; inputSummary?: string } = { name: namespace ? `${namespace}.${tool}` : tool };
+    const inputSummary = item.arguments === undefined ? undefined : safeCodexText(JSON.stringify(item.arguments), 800);
+    if (inputSummary !== undefined) info.inputSummary = inputSummary;
+    return info;
+  }
+  if (type === "collabAgentToolCall") {
+    const prompt = safeCodexText(item.prompt, 800);
+    const info: { name: string; inputSummary?: string } = { name: "subagent" };
+    if (prompt !== undefined) info.inputSummary = prompt;
+    return info;
+  }
+  if (type === "subAgentActivity") return { name: "subagent.activity" };
+  if (type === "imageGeneration") return { name: "image.generate" };
+  if (type === "sleep") return { name: "clock.sleep" };
+  return null;
+}
+
+function codexToolPhase(item: Record<string, unknown>, started: boolean): ToolCall["phase"] {
+  const status = codexString(item.status);
+  if (started && (!status || status === "inProgress")) return "requested";
+  if (status === "failed" || status === "declined") return "failed";
+  if (status === "completed") return "succeeded";
+  return started ? "running" : "succeeded";
+}
+
+function codexToolOutput(item: Record<string, unknown>): string | undefined {
+  const candidates = [item.aggregatedOutput, item.result, item.error, item.output];
+  for (const candidate of candidates) {
+    const text = typeof candidate === "string" ? safeCodexText(candidate, 2_000) : candidate && typeof candidate === "object" ? safeCodexText(JSON.stringify(candidate), 2_000) : undefined;
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function publishCodexItem(record: RunRecord, item: Record<string, unknown>, started: boolean): void {
+  const itemId = codexItemId(item);
+  const info = codexToolInfo(item);
+  if (!itemId || !info) {
+    const type = codexString(item.type);
+    if (type === "reasoning") publishCodexStatus(record, "running", { progress: 12, currentStep: "Reasoning" });
+    if (type === "plan") publishCodexStatus(record, "running", { progress: 8, currentStep: "Planning" });
+    if (type === "agentMessage") publishCodexStatus(record, "running", { progress: 55, currentStep: "Writing answer" });
+    return;
+  }
+
+  const existing = record.codexTools.get(itemId);
+  const startedAt = existing?.startedAt ?? timestamp();
+  const phase = codexToolPhase(item, started);
+  const outputSummary = started ? existing?.outputSummary : codexToolOutput(item) ?? existing?.outputSummary;
+  const inputSummary = info.inputSummary ?? existing?.inputSummary;
+  const tool: ToolCall = {
+    callId: itemId,
+    name: info.name,
+    phase,
+    ...(outputSummary === undefined ? {} : { outputSummary }),
+    startedAt,
+    ...(started ? {} : { finishedAt: timestamp() })
+  };
+  if (inputSummary !== undefined) tool.inputSummary = inputSummary;
+  record.codexTools.set(itemId, tool);
+  if (started) {
+    publishCodexStatus(record, "waiting_tool", { progress: 22, currentStep: info.name });
+  }
+  publishTool(record, tool);
+}
+
+function publishCodexFileArtifacts(record: RunRecord, item: Record<string, unknown>): void {
+  const changes = Array.isArray(item.changes) ? item.changes : [];
+  for (const change of changes) {
+    const changeRecord = codexRecord(change);
+    const path = codexString(changeRecord?.path);
+    if (!path) continue;
+    const name = path.replaceAll("\\", "/").split("/").pop() ?? path;
+    const artifact: FileArtifact = {
+      fileId: `${codexItemId(item) ?? randomUUID()}:${name}`,
+      name: path,
+      mimeType: name.endsWith(".md") ? "text/markdown" : name.endsWith(".json") ? "application/json" : "text/plain",
+      revision: 1
+    };
+    publish(record, { ...baseEvent(record, "file"), type: "file", file: artifact });
+  }
+}
+
+function handleCodexNotification(record: RunRecord, notification: CodexNotification): void {
+  if (record.cancelRequested || isTerminalStatus(record.snapshot.status)) return;
+  const params = codexRecord(notification.params);
+  if (!params) return;
+  const method = notification.method;
+
+  if (method.endsWith("/requestApproval") || method === "item/tool/requestUserInput" || method === "mcpServer/elicitation/request") {
+    publishCodexStatus(record, "waiting_user", { currentStep: "Codex requested input; local alpha declined it" });
+    return;
+  }
+
+  if (method === "item/agentMessage/delta") {
+    const delta = safeCodexText(params.delta, 8_000);
+    if (delta) {
+      publishCodexStatus(record, "running", { progress: 55, currentStep: "Streaming answer" });
+      // Protocol v0 consumers already aggregate the primary assistant stream
+      // under the stable `answer` part id.
+      publishTextDelta(record, "answer", "text", delta);
+    }
+    return;
+  }
+  if (method === "item/reasoning/summaryTextDelta" || method === "item/reasoning/textDelta") {
+    const delta = safeCodexText(params.delta, 8_000);
+    const itemId = codexString(params.itemId) ?? "reasoning";
+    if (delta) publishTextDelta(record, `reasoning:${itemId}`, "reasoning", delta);
+    publishCodexStatus(record, "running", { progress: 12, currentStep: "Reasoning" });
+    return;
+  }
+  if (method === "item/commandExecution/outputDelta" || method === "item/mcpToolCall/progress") {
+    const delta = safeCodexText(params.delta ?? params.output, 8_000);
+    const itemId = codexString(params.itemId) ?? codexString(params.callId) ?? "tool";
+    if (delta) publishTextDelta(record, `tool:${itemId}`, "text", delta);
+    return;
+  }
+  if (method === "item/started" || method === "item/completed") {
+    const item = codexRecord(params.item);
+    if (!item) return;
+    publishCodexItem(record, item, method === "item/started");
+    if (method === "item/completed" && codexString(item.type) === "fileChange") publishCodexFileArtifacts(record, item);
+    const itemType = codexString(item.type);
+    if (method === "item/completed" && itemType === "agentMessage") {
+      const text = safeCodexText(item.text, 32_000);
+      if (text) publish(record, { ...baseEvent(record, "part"), type: "part", part: { partId: "answer", kind: "text", text, done: true } });
+    }
+    if (method === "item/completed" && itemType === "reasoning") {
+      const text = safeCodexText(codexFlattenText(item.summary) || codexFlattenText(item.content), 32_000);
+      const itemId = codexItemId(item);
+      if (text && itemId) publish(record, { ...baseEvent(record, "part"), type: "part", part: { partId: `reasoning:${itemId}`, kind: "reasoning", text, done: true } });
+    }
+    return;
+  }
+  if (method === "turn/plan/updated") {
+    const plan = Array.isArray(params.plan) ? params.plan : [];
+    const completed = plan.filter((step) => codexString(codexRecord(step)?.status) === "completed").length;
+    const progress = plan.length ? Math.min(90, Math.max(record.snapshot.progress, Math.round((completed / plan.length) * 80))) : record.snapshot.progress;
+    const current = plan.find((step) => codexString(codexRecord(step)?.status) !== "completed");
+    const currentStep = codexString(codexRecord(current)?.step) ?? codexString(codexRecord(current)?.text) ?? "Planning";
+    publishCodexStatus(record, "running", { progress, currentStep });
+    return;
+  }
+  if (method === "turn/diff/updated") {
+    const diff = safeCodexText(params.diff, 32_000);
+    if (diff) publish(record, { ...baseEvent(record, "part"), type: "part", part: { partId: `diff:${record.codexTurnId ?? "turn"}`, kind: "text", text: diff, done: false } });
+    return;
+  }
+  if (method === "thread/tokenUsage/updated") {
+    const usage = codexRecord(params.tokenUsage);
+    const last = codexRecord(usage?.last) ?? codexRecord(usage?.total);
+    if (last) {
+      const inputTokens = codexNumber(last.inputTokens);
+      const outputTokens = codexNumber(last.outputTokens);
+      const providerRequestId = codexString(params.turnId);
+      record.codexUsage = {};
+      if (inputTokens !== undefined) record.codexUsage.inputTokens = inputTokens;
+      if (outputTokens !== undefined) record.codexUsage.outputTokens = outputTokens;
+      if (providerRequestId !== undefined) record.codexUsage.providerRequestId = providerRequestId;
+    }
+    return;
+  }
+  if (method === "thread/status/changed") {
+    const status = codexRecord(params.status);
+    if (codexString(status?.type) === "active") publishCodexStatus(record, "running", { progress: 5, currentStep: "Running Codex" });
+    return;
+  }
+  if (method === "error") {
+    const error = codexRecord(params.error);
+    const message = safeCodexText(error?.message ?? params.message, 2_000) ?? "Codex reported an error";
+    publish(record, { ...baseEvent(record, "error"), type: "error", code: "CODEX_ERROR", message, retryable: params.willRetry === true });
+  }
+}
+
+function publishExecutorFailure(record: RunRecord, code: string, error: unknown): void {
+  if (isTerminalStatus(record.snapshot.status)) return;
+  const message = safeCodexText(error instanceof Error ? error.message : "executor failed", 2_000) ?? "executor failed";
+  if (record.cancelRequested) {
+    publishFinished(record, "cancelled");
+    return;
+  }
+  publish(record, { ...baseEvent(record, "error"), type: "error", code, message, retryable: false });
+  publishFinished(record, "failed", { code, message }, record.codexUsage);
 }
 
 async function executeDemoRun(record: RunRecord): Promise<void> {
@@ -197,21 +508,70 @@ async function executeDemoRun(record: RunRecord): Promise<void> {
   publishFinished(record, "completed");
 }
 
+async function executeCodexRun(record: RunRecord, client: CodexAppServerClient): Promise<void> {
+  if (record.cancelRequested) {
+    publishFinished(record, "cancelled");
+    return;
+  }
+  publishStatus(record, "running", { progress: 4, currentStep: "Starting Codex" });
+  const request: RunRequest = {
+    prompt: record.snapshot.prompt,
+    model: record.snapshot.model,
+    mode: record.snapshot.mode,
+    effort: record.snapshot.effort,
+    ...(record.snapshot.workspaceId === undefined ? {} : { workspaceId: record.snapshot.workspaceId })
+  };
+  const result = await client.run(
+    {
+      prompt: request.prompt,
+      cwd: codexCwd,
+      ...(request.model === undefined ? {} : { model: request.model }),
+      effort: codexEffort(request),
+      sandbox: codexSandbox,
+      approvalPolicy: codexApprovalPolicy,
+      // Keep each HTTP run isolated by default. Set the flag to `false` only
+      // when local Codex rollout history is intentionally desired.
+      ephemeral: process.env.OPENRIGOR_CODEX_EPHEMERAL !== "false"
+    },
+    {
+      onSession: (session) => {
+        record.codexThreadId = session.threadId;
+        record.codexTurnId = session.turnId;
+        if (record.cancelRequested) {
+          void client.interrupt(session.threadId, session.turnId).catch(() => undefined);
+        }
+      },
+      onNotification: (notification) => handleCodexNotification(record, notification)
+    }
+  );
+
+  if (record.cancelRequested || result.status === "interrupted") {
+    publishFinished(record, "cancelled");
+    return;
+  }
+  if (result.status === "failed") {
+    const message = safeCodexText(result.error?.message ?? "Codex turn failed", 2_000) ?? "Codex turn failed";
+    publish(record, { ...baseEvent(record, "error"), type: "error", code: "CODEX_TURN_FAILED", message, retryable: false });
+    publishFinished(record, "failed", { code: "CODEX_TURN_FAILED", message }, record.codexUsage);
+    return;
+  }
+  publishStatus(record, "running", { progress: 94, currentStep: "Finalizing" });
+  publishFinished(record, "completed", undefined, record.codexUsage);
+}
+
 function createRun(request: RunRequest): RunRecord {
   const runId = `run_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
   const record: RunRecord = {
     snapshot: createInitialSnapshot(runId, request),
     events: [],
     listeners: new Set(),
-    cancelRequested: false
+    cancelRequested: false,
+    codexTools: new Map()
   };
   runs.set(runId, record);
   publish(record, { ...baseEvent(record, "snapshot"), type: "snapshot", snapshot: record.snapshot });
-  void executeDemoRun(record).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : "executor failed";
-    publish(record, { ...baseEvent(record, "error"), type: "error", code: "EXECUTOR_ERROR", message, retryable: false });
-    publishFinished(record, "failed", { code: "EXECUTOR_ERROR", message });
-  });
+  const execution = codexClient ? executeCodexRun(record, codexClient) : executeDemoRun(record);
+  void execution.catch((error: unknown) => publishExecutorFailure(record, codexClient ? "CODEX_EXECUTOR_ERROR" : "EXECUTOR_ERROR", error));
   return record;
 }
 
@@ -257,7 +617,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   if (req.method === "GET" && url.pathname === "/healthz") {
-    sendJson(res, 200, { ok: true, service: "openrigor-api", executor: process.env.OPENRIGOR_EXECUTOR ?? "demo" });
+    sendJson(res, 200, { ok: true, service: "openrigor-api", executor });
     return;
   }
 
@@ -296,6 +656,17 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (!isTerminalStatus(record.snapshot.status) && !record.cancelRequested) {
       record.cancelRequested = true;
       publishStatus(record, "cancelling", { currentStep: "Cancellation requested" });
+      if (codexClient && record.codexThreadId && record.codexTurnId) {
+        void codexClient.interrupt(record.codexThreadId, record.codexTurnId).catch((error: unknown) => {
+          // A turn that already exited is still safely considered cancelled
+          // because the user explicitly requested cancellation.
+          if (!isTerminalStatus(record.snapshot.status)) {
+            const message = safeCodexText(error instanceof Error ? error.message : "Codex interrupt failed", 2_000) ?? "Codex interrupt failed";
+            publish(record, { ...baseEvent(record, "error"), type: "error", code: "CODEX_INTERRUPT_ERROR", message, retryable: false });
+            publishFinished(record, "cancelled");
+          }
+        });
+      }
     }
     sendJson(res, 202, { runId: record.snapshot.runId, status: record.snapshot.status });
     return;
@@ -318,7 +689,8 @@ server.listen(port, "127.0.0.1", () => {
 
 function shutdown(signal: string): void {
   console.log(`received ${signal}; closing API`);
-  server.close(() => process.exit(0));
+  void codexClient?.close().finally(() => server.close(() => process.exit(0)));
+  if (!codexClient) server.close(() => process.exit(0));
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));

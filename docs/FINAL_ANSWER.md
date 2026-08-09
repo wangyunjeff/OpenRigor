@@ -1,28 +1,29 @@
 # Final handoff — 2026-08-09
 
-jeff，`OpenRigor` 已经准备为可直接开工的公开项目，已发布在：
+jeff，`OpenRigor` 已经从调研骨架推进到可直接使用的本地 Codex alpha，公开项目地址：
 
 <https://github.com/wangyunjeff/OpenRigor>
 
-首个实现 commit：`5dbcad6`（`Initialize OpenRigor replication workspace`）；当前 `main` HEAD：`32d3b71`（加入可重复 API/SSE smoke check）。本次交付不是只有一份分析文档。仓库包含完整技术尽调、管理层摘要、架构、协议、安全边界、实施路线，以及一个已通过类型检查、单元测试、生产构建和真实 SSE 烟测的 Phase 0 垂直切片。
+现在的第一版不是假聊天框：后端直接启动本机已登录的 `codex app-server`，前端可以发送真实任务，并显示文本流、思考过程、工具调用、命令输出、文件变更、状态和完成结果；停止按钮会调用 `turn/interrupt`。界面按照已观察到的 ClawsGO 深色任务工作台结构做了 clean-room 实现，没有复制第三方源码、品牌、截图或受保护素材。
 
-最关键的产品判断是：AIcss 只是可能帮助快速搭聊天表现层的 UI 源码，不是 ClawsGO 的 AI/Agent 后端。真正要复现的是可恢复任务、Agent 编排、隔离云工作区、事件重放、文件交付、用量账本和 SaaS 控制面。
-
-技术报告原文的 SHA-256 为 `58EA1E3B06A97DC37BE275F7758FBF12A0EF0F2A0EB75C4C306C01B7A5FE28AA`，校验记录见 `docs/TECHNICAL_REPORT.sha256`。
-
-本地启动：
+本地使用：
 
 ```powershell
 cd E:\0_Code\OpenRigor
+corepack enable
 pnpm install
-pnpm dev:api
+codex login status
+pnpm smoke:codex
+pnpm dev:codex
 ```
 
-另开终端：
+打开 <http://127.0.0.1:5173>。默认沙箱为 `workspace-write`，Codex 可以在这个仓库中工作；只想检查、不允许改文件时，先设置：
 
 ```powershell
-cd E:\0_Code\OpenRigor
-pnpm dev:web
+$env:OPENRIGOR_CODEX_SANDBOX = "read-only"
+pnpm dev:codex
 ```
 
-打开 <http://localhost:5173>。当前执行器是确定性 demo，不执行用户代码；下一步严格按 `docs/ROADMAP.md` 的 M1 推进 PostgreSQL 事件表、事务 outbox、队列 worker、sandbox provider 和工件存储。
+本轮已经真实验证：`codex-cli 0.146.0` 的 initialize/thread/turn 链路、浏览器 SSE 流式 `OK` 回复、只读 Shell 工具事件、usage、运行中取消、类型检查、单元测试和生产构建。
+
+当前边界也很清楚：这是单用户、单工作区、进程内存版本。刷新期间 SSE 可以重放，但 API 重启后记录会丢失；附件、交互审批、同线程追问、持久历史和远程服务器尚未实现。下一步按 `docs/ROADMAP.md` 做 PostgreSQL 事件表与恢复，再补多轮对话和审批，不先扩团队、计费或云主机。

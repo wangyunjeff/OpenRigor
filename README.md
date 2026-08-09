@@ -9,27 +9,36 @@ This repository is the implementation workspace created from the ClawsGO public-
 ## Current status
 
 - Research baseline: complete. Read [the full technical report](docs/TECHNICAL_REPORT.md).
-- Implementation baseline: Phase 0 skeleton.
-- Working slice: local API + SSE run events + browser console + deterministic demo executor.
-- Production execution: intentionally not enabled yet. The sandbox boundary must be designed and tested before accepting untrusted work.
+- Working local alpha: real Codex app-server execution, streamed answers/reasoning/tools/files, SSE replay, and stop/interrupt.
+- Interface: a ClawsGO-inspired clean-room task launcher and execution workspace with original code, copy, and design tokens.
+- Scope: one local user and one configured workspace. Runs/events are still process-memory only; attachments, approvals, follow-up turns, and durable history are not implemented yet.
+- Production execution: intentionally not enabled. A hosted release still needs the durable worker and sandbox boundary described in the architecture docs.
 
-## Start the local slice
+## Start the local Codex alpha
 
-Prerequisite: Node.js 20+ and pnpm 9+.
+Prerequisites: Node.js 20+, pnpm 9+, a working `codex` CLI, and an existing local Codex login.
 
 ```powershell
 corepack enable
 pnpm install
-pnpm dev:api
+codex --version
+codex login status
+pnpm smoke:codex
+pnpm dev:codex
 ```
 
-In another terminal:
+Open <http://127.0.0.1:5173>. `dev:codex` starts both services, fixes the Codex workspace to this repository, and uses the signed-in local Codex app-server. The browser never receives the Codex auth cache or API key.
+
+The default local sandbox is `workspace-write`, so Codex can work on this repository. For inspection-only use:
 
 ```powershell
-pnpm dev:web
+$env:OPENRIGOR_CODEX_SANDBOX = "read-only"
+pnpm dev:codex
 ```
 
-Open <http://localhost:5173>. The web console submits a run to `http://localhost:8787`, subscribes to its SSE stream, and renders text, tool, status, and completion events.
+Interactive approval UI is deferred; unexpected approval and user-input requests are conservatively declined instead of hanging. Stop sends `turn/interrupt` to the active Codex turn.
+
+To run the deterministic UI/API demo without Codex, start `pnpm dev:api` and `pnpm dev:web` in separate terminals.
 
 Useful checks:
 
@@ -43,13 +52,14 @@ With the API running, the protocol smoke check can be repeated from another term
 
 ```powershell
 pnpm smoke:api
+pnpm smoke:codex
 ```
 
 ## Repository map
 
 ```text
 apps/web          Vite + React operator console
-apps/api          HTTP API, SSE transport, in-memory demo runner
+apps/api          HTTP/SSE transport plus demo and Codex app-server executors
 packages/protocol Shared RunRequest/RunEvent contract
 infra             Local service dependencies and deployment notes
 docs              Research, architecture, protocol, security, roadmap

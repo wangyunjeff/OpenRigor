@@ -88,9 +88,9 @@ gVisor is a reasonable first provider because it matches the researched product 
 | Concern | Local skeleton | Production target |
 |---|---|---|
 | State | process memory | PostgreSQL + event table |
-| Dispatch | `setTimeout` demo executor | leased queue / durable workflow |
+| Dispatch | demo executor or local `codex app-server` child process | leased queue / durable workflow |
 | Stream | in-process listeners | event gateway replaying persisted events |
-| Files | no user code/artifacts | object store + scan + signed URLs |
+| Files | fixed local Codex workspace; no artifact service | object store + scan + signed URLs |
 | Auth | none | OIDC/OTP, session rotation, RBAC |
 | Sandbox | no execution | gVisor/Kubernetes or Firecracker |
 | Billing | none | provider usage ledger and Stripe/WeChat adapters |

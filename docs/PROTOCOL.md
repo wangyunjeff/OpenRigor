@@ -57,3 +57,18 @@ data: {"eventId":"run_01:4","runId":"run_01","sequence":4,"ts":"2026-08-09T12:00
 - Delivery is at least once; consumers must be idempotent.
 - Payloads must never contain provider secrets, session cookies, or raw sandbox credentials.
 - Additive fields are compatible; changing a field's meaning requires a protocol version.
+
+## Local Codex adapter
+
+The local alpha keeps the public `RunEvent` contract stable while adapting the Codex app-server JSONL stream:
+
+| Codex notification | OpenRigor event |
+|---|---|
+| `item/agentMessage/delta` | `part-delta(kind=text)` |
+| `item/reasoning/summaryTextDelta`, `item/reasoning/textDelta` | `part-delta(kind=reasoning)` |
+| `item/started`, `item/completed` for command/file/search items | `tool` and `file` |
+| `item/commandExecution/outputDelta` | tool-scoped `part-delta` |
+| `thread/tokenUsage/updated` | `run-finished.usage` |
+| `turn/completed` | `run-finished` |
+
+Unknown provider notifications are ignored by the adapter and never forwarded verbatim. This prevents provider-specific payloads or credentials from becoming part of the browser-facing contract.

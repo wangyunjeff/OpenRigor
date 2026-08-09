@@ -379,6 +379,30 @@ flowchart LR
 | 检索 | pgvector + PostgreSQL FTS | OpenSearch/Typesense + pgvector | 支持知识库和引用检索 |
 | 可观测性 | Sentry + OpenTelemetry | Prometheus/Grafana/Loki/Tempo | 同时看 API、workflow、sandbox、模型费用 |
 
+### 5.1.1 第一版已经落地的 Codex 运行时
+
+2026-08-09 对本机 `codex-cli 0.146.0` 的只读验证改变了第一版的实现优先级：单用户本地 alpha 不需要先自研 Agent orchestrator，也不应解析 `codex exec` 的终端文本。官方把 `Codex app-server` 定位为富客户端嵌入接口，覆盖认证、线程、审批和流式 Agent 事件；`Codex SDK` 与 `codex exec --json` 更适合自动化脚本和 CI。app-server 源码公开在 <https://github.com/openai/codex/tree/main/codex-rs/app-server>。
+
+OpenRigor 当前通过 stdio 启动本机已有登录态的 `codex app-server`，完整握手为：
+
+```text
+initialize -> initialized
+thread/start -> thread id
+turn/start -> turn id
+
+item/started
+item/reasoning/*Delta
+item/agentMessage/delta
+item/commandExecution/outputDelta
+item/completed
+thread/tokenUsage/updated
+turn/completed
+```
+
+API 将这些通知翻译为版本化 `RunEvent`，再经 SSE 发送给浏览器；停止任务调用 `turn/interrupt`。实测已经覆盖文本流、reasoning、Shell 工具、用量、完成态和取消态。Codex 登录凭证只由本地子进程读取，不进入浏览器事件或前端配置。
+
+当前边界必须明确：这是“老板自己先用”的本地运行时，不是生产隔离方案。线程和 OpenRigor 事件仍保存在进程内存中；工作目录由服务端环境变量固定；审批 UI 尚未接入；附件、多轮续聊和重启恢复仍待实现。托管版仍需按本报告后续章节迁移到持久队列、独立 worker、PostgreSQL 事件表和受控沙箱。
+
 ### 5.2 控制面数据模型
 
 至少需要以下实体：

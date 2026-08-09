@@ -11,7 +11,8 @@ ClawsGO 的核心不是一个聊天框，而是一套“持久任务运行时 + 
 - 将 2026-08-09 调研原文归档到 `docs/TECHNICAL_REPORT.md`。
 - 将管理层决策、首期范围和启动命令归档到本文件。
 - 定义共享 `RunRequest` / `RunEvent` 协议，覆盖 snapshot、文本增量、reasoning、tool、file、subagent、status 和完成事件。
-- 提供本地 API/SSE 服务和 React 控制台，能提交一个任务、实时查看事件、取消任务并恢复历史事件。
+- 提供 ClawsGO 工作台风格的 clean-room React 界面，包含任务分类、案例卡片、composer、reasoning、工具卡、命令输出、文件变更和停止按钮。
+- 已接入本机 `codex app-server`：能提交真实 Codex 任务、流式查看执行过程、调用工作区工具、记录 usage，并用 `turn/interrupt` 取消任务。
 - 提供架构、路线图、安全边界、协议说明和本地依赖编排文件。
 
 ## 建议技术栈
@@ -50,15 +51,19 @@ ClawsGO 的核心不是一个聊天框，而是一套“持久任务运行时 + 
 cd E:\0_Code\OpenRigor
 corepack enable
 pnpm install
-pnpm dev:api       # 终端 1，8787
-pnpm dev:web       # 终端 2，5173
+codex login status
+pnpm smoke:codex
+pnpm dev:codex
 ```
+
+打开 <http://127.0.0.1:5173>。当前命令会把工作目录固定在 `E:\0_Code\OpenRigor`，并使用本机 Codex 登录态。只读任务可先设置 `$env:OPENRIGOR_CODEX_SANDBOX = "read-only"`。
 
 接着按 [ROADMAP.md](ROADMAP.md) 的 M1 顺序推进：协议测试 -> PostgreSQL 事件表 -> 队列 worker -> sandbox provider -> 文件工件 -> 鉴权/计量。
 
 ## 风险与边界
 
-- 当前 executor 是确定性的 demo，不执行用户代码，也不代表生产隔离已经完成。
+- 当前默认开发 executor 仍保留确定性 demo；`pnpm dev:codex` 会切换到真实本机 Codex。两者都不是生产隔离方案。
+- 真实 Codex alpha 仍是单进程内存状态，尚不能在 API 重启后恢复运行记录；附件、交互审批和同一线程连续追问也未完成。
 - 调研结论是 2026-08-09 的公开页面快照；价格、构建资源和区域配置会变化。
 - 不应复制 ClawsGO/AICSS 的商标、源码、文案、截图或独有视觉资产；第三方组件须逐项核对许可证。
 - 生产上线前必须完成租户隔离、SSRF 防护、命令白名单/资源限额、密钥不进入沙箱、审计日志和数据删除流程。
