@@ -4,6 +4,8 @@ jeff，`OpenRigor` 已经从调研骨架推进到可直接使用的本地 Codex 
 
 <https://github.com/wangyunjeff/OpenRigor>
 
+当前 `main` HEAD：`ccb99a9`（Codex turn 超时/取消竞态加固）。
+
 现在的第一版不是假聊天框：后端直接启动本机已登录的 `codex app-server`，前端可以发送真实任务，并显示文本流、思考过程、工具调用、命令输出、文件变更、状态和完成结果；停止按钮会调用 `turn/interrupt`。界面按照已观察到的 ClawsGO 深色任务工作台结构做了 clean-room 实现，没有复制第三方源码、品牌、截图或受保护素材。
 
 本地使用：
