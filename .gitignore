@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.turbo/
+.vite/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.openrigor/
+infra/data/
+infra/minio/
+output/playwright/
+.playwright-cli/

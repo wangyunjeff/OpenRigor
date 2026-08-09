@@ -1,0 +1,64 @@
+:root {
+  color: #e9eef5;
+  background: #0c1016;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: #0c1016; }
+button, textarea { font: inherit; }
+button { cursor: pointer; }
+.shell { min-height: 100vh; padding: 32px clamp(16px, 5vw, 72px) 56px; background: radial-gradient(circle at 12% -8%, #233447 0, transparent 36%), #0c1016; }
+.topbar { max-width: 1180px; margin: 0 auto 28px; display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.eyebrow { color: #72d7c4; font-size: 11px; font-weight: 700; letter-spacing: .16em; margin: 0 0 8px; }
+h1, h2, h3, p { margin-top: 0; }
+h1 { margin-bottom: 0; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.02em; }
+h2 { margin-bottom: 0; font-size: 16px; }
+h3 { color: #9aabbc; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
+.connection { border: 1px solid #2b3948; border-radius: 999px; padding: 7px 11px; font-size: 12px; color: #9aabbc; display: inline-flex; align-items: center; gap: 7px; }
+.connection-open { color: #72d7c4; border-color: #2e756a; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.workspace { max-width: 1180px; margin: 0 auto; display: grid; gap: 18px; }
+.panel { background: rgba(18, 25, 34, .92); border: 1px solid #253241; border-radius: 8px; box-shadow: 0 18px 40px rgba(0, 0, 0, .18); }
+.composer { padding: 20px; }
+label { display: block; color: #aebdca; font-size: 12px; font-weight: 600; margin-bottom: 9px; }
+textarea { width: 100%; resize: vertical; border: 1px solid #334456; border-radius: 6px; background: #0d141c; color: #eef4f8; padding: 13px 14px; outline: none; line-height: 1.5; }
+textarea:focus { border-color: #72d7c4; box-shadow: 0 0 0 3px rgba(114, 215, 196, .12); }
+.composer-footer, .panel-heading, .status-line, .event-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.composer-footer { margin-top: 13px; }
+.muted, .empty, .step { color: #8091a2; font-size: 12px; }
+.actions { display: flex; gap: 8px; }
+button { border: 1px solid transparent; border-radius: 6px; padding: 9px 14px; font-weight: 650; font-size: 13px; }
+button:disabled { cursor: not-allowed; opacity: .42; }
+.primary { color: #071512; background: #72d7c4; }
+.primary:hover:not(:disabled) { background: #8ce5d3; }
+.secondary { color: #c7d2dc; background: #18232f; border-color: #344657; }
+.secondary:hover:not(:disabled) { border-color: #72d7c4; }
+.run-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 18px; }
+.status-panel, .timeline-panel { padding: 20px; min-height: 430px; }
+.run-id { color: #738597; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+.status-line { margin-top: 26px; color: #dbe6ed; }
+.status-line strong { color: #72d7c4; font-size: 22px; font-weight: 650; }
+.progress { height: 7px; border-radius: 99px; background: #202c38; margin: 12px 0 8px; overflow: hidden; }
+.progress span { display: block; height: 100%; border-radius: inherit; background: #72d7c4; transition: width .25s ease; }
+.step { min-height: 18px; }
+.answer { margin-top: 36px; border-top: 1px solid #253241; padding-top: 18px; }
+.answer p { color: #d7e2ea; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.timeline { margin-top: 18px; max-height: 520px; overflow-y: auto; padding-right: 4px; }
+.event { border-left: 2px solid #344657; padding: 8px 0 8px 12px; margin: 0 0 9px; }
+.event-status { border-left-color: #72d7c4; }
+.event-tool { border-left-color: #e9bd74; }
+.event-run-finished { border-left-color: #91b7e8; }
+.event-error { border-left-color: #e78d8d; }
+.event-meta { color: #718497; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.event p { margin: 5px 0 0; color: #cbd7e0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.toast { position: fixed; bottom: 22px; right: 22px; max-width: min(360px, calc(100vw - 44px)); padding: 12px 14px; border: 1px solid #8d4545; border-radius: 6px; background: #321d23; color: #ffd7d7; font-size: 13px; }
+@media (max-width: 780px) {
+  .shell { padding: 22px 14px 42px; }
+  .topbar, .composer-footer { align-items: flex-start; flex-direction: column; }
+  .run-grid { grid-template-columns: 1fr; }
+  .actions { width: 100%; }
+  .actions button { flex: 1; }
+}

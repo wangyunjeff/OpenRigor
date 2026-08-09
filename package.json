@@ -1,0 +1,19 @@
+{
+  "name": "openrigor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.5",
+  "scripts": {
+    "dev:api": "pnpm --filter @openrigor/api dev",
+    "dev:web": "pnpm --filter @openrigor/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @openrigor/protocol test",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

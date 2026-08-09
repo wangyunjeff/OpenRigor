@@ -1,0 +1,15 @@
+{
+  "name": "@openrigor/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @openrigor/protocol build && tsx watch src/server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@openrigor/protocol": "workspace:*"
+  }
+}
