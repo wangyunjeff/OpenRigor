@@ -403,6 +403,41 @@ API 将这些通知翻译为版本化 `RunEvent`，再经 SSE 发送给浏览器
 
 当前边界必须明确：这是“老板自己先用”的本地运行时，不是生产隔离方案。线程和 OpenRigor 事件仍保存在进程内存中；工作目录由服务端环境变量固定；审批 UI 尚未接入；附件、多轮续聊和重启恢复仍待实现。托管版仍需按本报告后续章节迁移到持久队列、独立 worker、PostgreSQL 事件表和受控沙箱。
 
+### 5.1.2 当前前端组件策略
+
+候选库筛选结果：
+
+| 方案 | 适配度 | 结论 |
+|---|---:|---|
+| shadcn/ui + Radix | 高 | 最适合做工作台基础层；源码可控、无障碍和弹层行为成熟 |
+| Vercel AI Elements | 高 | 最适合选择性吸收 AI 对话、推理、工具、终端和 Artifact 组件 |
+| assistant-ui | 中 | 完整线程 runtime 很强，但当前会与 `RunEvent` 形成双重状态，暂缓 |
+| AIcss | 中 | 可购买少量视觉源码做参考，但不承担协议、状态和运行时 |
+| Magic UI / Aceternity / React Bits | 低 | 更适合营销页和演示动效，容易让生产工作台显得花哨，不作为主组件层 |
+
+第一版不再继续扩张手写交互组件，采用下面的分层：
+
+| 层 | 当前选型 | 用法 |
+|---|---|---|
+| 无头交互原语 | Radix UI | Dropdown Menu、Collapsible、Tooltip；负责键盘、焦点、Portal 和弹层定位 |
+| AI 表现结构 | Vercel AI Elements 的组件边界 | 按 Conversation、Reasoning、Tool、Terminal、Artifact 组织本地组件，但继续消费 OpenRigor `RunEvent` |
+| 图标 | Lucide React | 全部工具、导航、状态和按钮图标 |
+| Markdown | React Markdown + remark-gfm | 流式回复中的标题、列表、表格、链接、引用和代码 |
+| 主题 | OpenRigor 自有 CSS tokens | 中性石墨背景、克制的紫丁香主色和语义状态色，不复制第三方品牌资产 |
+
+AI Elements 是构建在 shadcn/ui 之上的源码组件库，适合借用 AI 界面的展示边界；它不是 Agent runtime。OpenRigor 当前后端已经有 `RunEvent`/SSE 状态模型，所以不能为了套组件把数据层改成 `useChat`。事件仍按下面的方式投影：
+
+```text
+EventSource
+  -> eventId 去重和 RunSnapshot 投影
+  -> text / reasoning / tool / file / diff 视图模型
+  -> AI Elements 风格的展示组件
+```
+
+暂不接入 `assistant-ui` runtime。它适合完整聊天线程、重试、分支、编辑和附件，但现在引入会让它的线程状态与 OpenRigor 的 run 状态并存，形成双重状态管理。等 M1 完成持久消息、续聊和重试协议后，再评估用 `ExternalStoreRuntime` 对接。
+
+当前代码已经接入 Radix Dropdown Menu、Collapsible、Tooltip、Lucide 和 GFM Markdown；首屏、运行态、工具输出、完成态均已用真实 Codex 任务做过桌面截图检查。后续优先补 Artifact/CodeBlock、审批确认和附件，不安装 AI Elements 全家桶。
+
 ### 5.2 控制面数据模型
 
 至少需要以下实体：

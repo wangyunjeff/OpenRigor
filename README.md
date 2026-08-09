@@ -10,7 +10,7 @@ This repository is the implementation workspace created from the ClawsGO public-
 
 - Research baseline: complete. Read [the full technical report](docs/TECHNICAL_REPORT.md).
 - Working local alpha: real Codex app-server execution, streamed answers/reasoning/tools/files, SSE replay, and stop/interrupt.
-- Interface: a ClawsGO-inspired clean-room task launcher and execution workspace with original code, copy, and design tokens.
+- Interface: an original AI-native operator console using Radix interaction primitives, Lucide icons, GFM Markdown, and AI Elements-style reasoning/tool/activity composition.
 - Scope: one local user and one configured workspace. Runs/events are still process-memory only; attachments, approvals, follow-up turns, and durable history are not implemented yet.
 - Production execution: intentionally not enabled. A hosted release still needs the durable worker and sandbox boundary described in the architecture docs.
 
