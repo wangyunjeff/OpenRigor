@@ -146,6 +146,10 @@ function publishFinished(
   error?: { code: string; message: string },
   usage?: { inputTokens?: number; outputTokens?: number; providerRequestId?: string }
 ): void {
+  // Cancellation, provider completion, and executor failure can race. Keep
+  // the public event stream strictly single-terminal so clients do not need
+  // to guess which completion event wins.
+  if (isTerminalStatus(record.snapshot.status)) return;
   const base = baseEvent(record, "run-finished");
   const event: RunEvent = {
     ...base,

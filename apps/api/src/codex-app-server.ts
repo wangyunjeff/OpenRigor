@@ -142,7 +142,17 @@ export class CodexAppServerClient {
       const turnParams: Record<string, unknown> = { threadId, input };
       if (options.model && options.model !== "auto") turnParams.model = options.model;
       if (options.effort) turnParams.effort = options.effort;
-      const turnResponse = await this.request("turn/start", turnParams);
+      // A turn/start response is normally immediate, but use the turn
+      // deadline rather than the short control-plane timeout. If the server
+      // has already emitted turn/started before a transport error, the catch
+      // path below can still interrupt the known turn.
+      let turnResponse: unknown;
+      try {
+        turnResponse = await this.request("turn/start", turnParams, timeoutValue(this.options.turnTimeoutMs, DEFAULT_TURN_TIMEOUT_MS));
+      } catch (error) {
+        if (active.turnId) void this.interrupt(threadId, active.turnId).catch(() => undefined);
+        throw error;
+      }
       const turn = asRecord(asRecord(turnResponse)?.turn);
       turnId = stringValue(turn?.id);
       if (!turnId) throw new Error("Codex app-server returned no turn id");
@@ -239,14 +249,14 @@ export class CodexAppServerClient {
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
   }
 
-  private request(method: string, params: unknown): Promise<unknown> {
+  private request(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
     const child = this.child;
     if (!child || child.killed || child.exitCode !== null || !child.stdin.writable) {
       return Promise.reject(new Error("Codex app-server is not running"));
     }
     const id = this.nextRequestId++;
     const key = idKey(id);
-    const requestTimeout = timeoutValue(this.options.requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
+    const requestTimeout = timeoutValue(timeoutMs ?? this.options.requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(key);
@@ -298,6 +308,11 @@ export class CodexAppServerClient {
     const threadId = stringValue(params?.threadId);
     if (threadId) {
       const active = this.activeTurns.get(threadId);
+      if (message.method === "turn/started" && active) {
+        const turn = asRecord(params?.turn);
+        const startedTurnId = stringValue(turn?.id);
+        if (startedTurnId) active.turnId = startedTurnId;
+      }
       try {
         active?.notify?.(notification);
       } catch {
