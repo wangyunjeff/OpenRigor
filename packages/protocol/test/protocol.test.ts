@@ -24,3 +24,11 @@ test("normalizes and bounds the client request id used for idempotency", () => {
     /clientRequestId exceeds 200 characters/
   );
 });
+
+test("normalizes and bounds the run id used for conversation continuation", () => {
+  assert.equal(validateRunRequest({ prompt: "follow up", continueFromRunId: "  run_parent  " }).continueFromRunId, "run_parent");
+  assert.throws(
+    () => validateRunRequest({ prompt: "follow up", continueFromRunId: "x".repeat(201) }),
+    /continueFromRunId exceeds 200 characters/
+  );
+});

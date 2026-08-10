@@ -28,6 +28,8 @@ export interface RunRequest {
   workspaceId?: string;
   attachments?: AttachmentRef[];
   clientRequestId?: string;
+  /** Continue the conversation whose latest run has this id. */
+  continueFromRunId?: string;
 }
 
 export interface RunSnapshot {
@@ -42,6 +44,12 @@ export interface RunSnapshot {
   progress: number;
   currentStep?: string;
   workspaceId?: string;
+  /** Stable id shared by every run in one conversation. */
+  conversationId?: string;
+  /** The first run in this conversation. */
+  rootRunId?: string;
+  /** The immediately preceding run when this is a follow-up. */
+  parentRunId?: string;
   error?: { code: string; message: string };
 }
 
@@ -137,6 +145,26 @@ export interface RunAccepted {
   runId: string;
   status: Extract<RunStatus, "queued" | "running">;
   eventsUrl: string;
+  conversationId?: string;
+  rootRunId?: string;
+  parentRunId?: string;
+}
+
+export interface ConversationRun {
+  snapshot: RunSnapshot;
+  events: RunEvent[];
+}
+
+/** Additive conversation context returned by GET /api/runs/:runId. */
+export interface RunConversation {
+  conversationId: string;
+  rootRunId: string;
+  runs: ConversationRun[];
+}
+
+/** The legacy snapshot/events pair plus the full conversation when available. */
+export interface RunDetail extends ConversationRun {
+  conversation?: RunConversation;
 }
 
 export function isTerminalStatus(status: RunStatus): status is FinishedEvent["status"] {
@@ -170,6 +198,11 @@ export function validateRunRequest(value: unknown): RunRequest {
     const clientRequestId = candidate.clientRequestId.trim();
     if (clientRequestId.length > 200) throw new Error("clientRequestId exceeds 200 characters");
     request.clientRequestId = clientRequestId;
+  }
+  if (typeof candidate.continueFromRunId === "string" && candidate.continueFromRunId.trim()) {
+    const continueFromRunId = candidate.continueFromRunId.trim();
+    if (continueFromRunId.length > 200) throw new Error("continueFromRunId exceeds 200 characters");
+    request.continueFromRunId = continueFromRunId;
   }
 
   if (Array.isArray(candidate.attachments)) {

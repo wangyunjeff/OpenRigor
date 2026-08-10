@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @openrigor/protocol build && vite --host 127.0.0.1 --port 5173",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173"
   },

@@ -19,7 +19,10 @@ function launch(script: "dev:api" | "dev:web"): ChildProcess {
     cwd: process.cwd(),
     env: sharedEnv,
     stdio: "inherit",
-    windowsHide: false
+    windowsHide: false,
+    // Recent Node.js releases require Windows batch launchers such as
+    // pnpm.cmd to be resolved through the command shell.
+    ...(process.platform === "win32" ? { shell: true } : {})
   });
   children.add(child);
   child.once("exit", (code, signal) => {

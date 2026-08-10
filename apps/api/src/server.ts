@@ -10,6 +10,7 @@ import {
   type EventBase,
   type FileArtifact,
   type RunEvent,
+  type RunDetail,
   type RunRequest,
   type RunSnapshot,
   type RunStatus,
@@ -20,7 +21,11 @@ import {
   type CodexAppServerClient,
   type CodexNotification
 } from "./codex-app-server.js";
-import { getOrCreateIdempotent } from "./idempotency.js";
+import {
+  IdempotencyConflictError,
+  getOrCreateIdempotent,
+  type IdempotencyEntry
+} from "./idempotency.js";
 
 const port = Number.parseInt(process.env.PORT ?? "8787", 10);
 const allowedOrigins = new Set(
@@ -62,7 +67,14 @@ interface RunRecord {
 }
 
 const runs = new Map<string, RunRecord>();
-const runsByClientRequestId = new Map<string, RunRecord>();
+const runsByClientRequestId = new Map<string, IdempotencyEntry<RunRecord>>();
+const runsByConversationId = new Map<string, RunRecord[]>();
+
+class HttpError extends Error {
+  public constructor(public readonly statusCode: number, message: string) {
+    super(message);
+  }
+}
 
 function timestamp(): string {
   return new Date().toISOString();
@@ -531,12 +543,13 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
     {
       prompt: request.prompt,
       cwd: codexCwd,
+      ...(record.codexThreadId === undefined ? {} : { threadId: record.codexThreadId }),
       ...(request.model === undefined ? {} : { model: request.model }),
       effort: codexEffort(request),
       sandbox: codexSandbox,
       approvalPolicy: codexApprovalPolicy,
-      // Keep each HTTP run isolated by default. Set the flag to `false` only
-      // when local Codex rollout history is intentionally desired.
+      // A root run creates one thread. Follow-up runs pass that thread id and
+      // append another turn without creating or resuming a second thread.
       ephemeral: process.env.OPENRIGOR_CODEX_EPHEMERAL !== "false"
     },
     {
@@ -565,17 +578,95 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
   publishFinished(record, "completed", undefined, record.codexUsage);
 }
 
+function conversationIdOf(record: RunRecord): string {
+  return record.snapshot.conversationId ?? record.snapshot.rootRunId ?? record.snapshot.runId;
+}
+
+function rootRunIdOf(record: RunRecord): string {
+  return record.snapshot.rootRunId ?? record.snapshot.runId;
+}
+
+function conversationRuns(record: RunRecord): RunRecord[] {
+  return runsByConversationId.get(conversationIdOf(record)) ?? [record];
+}
+
+function runDetail(record: RunRecord): RunDetail {
+  const conversationId = conversationIdOf(record);
+  const rootRunId = rootRunIdOf(record);
+  return {
+    snapshot: record.snapshot,
+    events: record.events,
+    conversation: {
+      conversationId,
+      rootRunId,
+      runs: conversationRuns(record).map((conversationRun) => ({
+        snapshot: conversationRun.snapshot,
+        events: conversationRun.events
+      }))
+    }
+  };
+}
+
+function runRequestFingerprint(request: RunRequest): string {
+  return JSON.stringify({
+    prompt: request.prompt,
+    model: request.model ?? "auto",
+    mode: request.mode ?? "standard",
+    effort: request.effort ?? "balanced",
+    workspaceId: request.workspaceId ?? null,
+    attachments: (request.attachments ?? []).map((attachment) => ({
+      fileId: attachment.fileId,
+      name: attachment.name,
+      mimeType: attachment.mimeType ?? null,
+      sizeBytes: attachment.sizeBytes ?? null
+    })),
+    continueFromRunId: request.continueFromRunId ?? null
+  });
+}
+
 function createRun(request: RunRequest): { record: RunRecord; replayed: boolean } {
-  const result = getOrCreateIdempotent(request.clientRequestId, runsByClientRequestId, () => {
+  const result = getOrCreateIdempotent(request.clientRequestId, runRequestFingerprint(request), runsByClientRequestId, () => {
     const runId = `run_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+    let conversationId = `conversation_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+    let rootRunId = runId;
+    let parentRunId: string | undefined;
+    let codexThreadId: string | undefined;
+
+    if (request.continueFromRunId) {
+      const parent = runs.get(request.continueFromRunId);
+      if (!parent) throw new HttpError(404, "continueFromRunId was not found");
+      const chain = conversationRuns(parent);
+      const latest = chain.at(-1);
+      if (latest !== parent) throw new HttpError(409, "continueFromRunId must identify the latest run in the conversation");
+      if (!isTerminalStatus(parent.snapshot.status)) throw new HttpError(409, "continueFromRunId must identify a terminal run");
+      if (chain.some((candidate) => !isTerminalStatus(candidate.snapshot.status))) {
+        throw new HttpError(409, "conversation already has an active run");
+      }
+      conversationId = conversationIdOf(parent);
+      rootRunId = rootRunIdOf(parent);
+      parentRunId = parent.snapshot.runId;
+      codexThreadId = parent.codexThreadId;
+      if (codexClient && !codexThreadId) throw new HttpError(409, "Codex thread is unavailable for continuation");
+    }
+
+    const initialSnapshot = createInitialSnapshot(runId, request);
     const record: RunRecord = {
-      snapshot: createInitialSnapshot(runId, request),
+      snapshot: {
+        ...initialSnapshot,
+        conversationId,
+        rootRunId,
+        ...(parentRunId === undefined ? {} : { parentRunId })
+      },
       events: [],
       listeners: new Set(),
       cancelRequested: false,
-      codexTools: new Map()
+      codexTools: new Map(),
+      ...(codexThreadId === undefined ? {} : { codexThreadId })
     };
     runs.set(runId, record);
+    const chain = runsByConversationId.get(conversationId) ?? [];
+    chain.push(record);
+    runsByConversationId.set(conversationId, chain);
     publish(record, { ...baseEvent(record, "snapshot"), type: "snapshot", snapshot: record.snapshot });
     const execution = codexClient ? executeCodexRun(record, codexClient) : executeDemoRun(record);
     void execution.catch((error: unknown) => publishExecutorFailure(record, codexClient ? "CODEX_EXECUTOR_ERROR" : "EXECUTOR_ERROR", error));
@@ -642,7 +733,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (req.method === "GET" && runId) {
     const record = runs.get(runId);
     if (!record) return sendJson(res, 404, { error: "run not found" });
-    sendJson(res, 200, { snapshot: record.snapshot, events: record.events });
+    sendJson(res, 200, runDetail(record));
     return;
   }
 
@@ -651,9 +742,17 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       const request = validateRunRequest(await readJson(req));
       const { record, replayed } = createRun(request);
       if (replayed) res.setHeader("Idempotency-Replayed", "true");
-      sendJson(res, 202, { runId: record.snapshot.runId, status: record.snapshot.status, eventsUrl: `/api/runs/${record.snapshot.runId}/events` });
+      sendJson(res, 202, {
+        runId: record.snapshot.runId,
+        status: record.snapshot.status,
+        eventsUrl: `/api/runs/${record.snapshot.runId}/events`,
+        conversationId: conversationIdOf(record),
+        rootRunId: rootRunIdOf(record),
+        ...(record.snapshot.parentRunId === undefined ? {} : { parentRunId: record.snapshot.parentRunId })
+      });
     } catch (error: unknown) {
-      sendJson(res, 400, { error: error instanceof Error ? error.message : "invalid request" });
+      const statusCode = error instanceof HttpError ? error.statusCode : error instanceof IdempotencyConflictError ? 409 : 400;
+      sendJson(res, statusCode, { error: error instanceof Error ? error.message : "invalid request" });
     }
     return;
   }
@@ -685,7 +784,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   sendJson(res, 404, { error: "not found" });
 }
 
-const server = createServer((req, res) => {
+export const server = createServer((req, res) => {
   void handle(req, res).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : "internal server error";
     if (!res.headersSent) sendJson(res, 500, { error: message });

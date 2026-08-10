@@ -99,6 +99,17 @@ import {
   TooltipRoot,
   TooltipTrigger
 } from "./components/ui/tooltip";
+import {
+  applyRunEvent,
+  cleanHistoryPrompt,
+  projectRunEvents,
+  restoreConversation,
+  type ConversationRestorePayload,
+  type ConversationRunSnapshot,
+  type ConversationRunView,
+  type ConversationViewState,
+  type ToolProjection
+} from "./conversation";
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8787";
 
@@ -146,36 +157,43 @@ interface ContextOption {
   icon: LucideIcon;
 }
 
-interface ToolProjection {
-  event: ToolEvent;
-  firstAt: string;
-  lastAt: string;
-  firstIndex: number;
-}
-
 interface RecentTask {
-  runId: string;
+  rootRunId: string;
+  conversationId: string;
+  latestRunId: string;
   prompt: string;
   status: RunSnapshot["status"];
   updatedAt: string;
 }
 
 const recentTasksStorageKey = "openrigor.recent-tasks";
+const activeConversationStorageKey = "openrigor.active-conversation";
+const runStatuses: RunSnapshot["status"][] = ["queued", "running", "waiting_tool", "waiting_user", "cancelling", "completed", "failed", "cancelled"];
 
-function cleanHistoryPrompt(prompt: string): string {
-  const marker = prompt.lastIndexOf("\n\nTask:\n");
-  return marker >= 0 ? prompt.slice(marker + "\n\nTask:\n".length) : prompt;
+function isRunStatus(value: unknown): value is RunSnapshot["status"] {
+  return typeof value === "string" && runStatuses.some((status) => status === value);
 }
 
 function loadRecentTasks(): RecentTask[] {
   try {
     const value = JSON.parse(window.localStorage.getItem(recentTasksStorageKey) ?? "[]") as unknown;
     if (!Array.isArray(value)) return [];
-    return value.filter((item): item is RecentTask => {
-      if (!item || typeof item !== "object") return false;
+    return value.flatMap((item): RecentTask[] => {
+      if (!item || typeof item !== "object") return [];
       const candidate = item as Record<string, unknown>;
-      return typeof candidate.runId === "string" && typeof candidate.prompt === "string" && typeof candidate.status === "string" && typeof candidate.updatedAt === "string";
-    }).map((item) => ({ ...item, prompt: cleanHistoryPrompt(item.prompt) })).slice(0, 8);
+      const legacyRunId = typeof candidate.runId === "string" ? candidate.runId : undefined;
+      const rootRunId = typeof candidate.rootRunId === "string" ? candidate.rootRunId : legacyRunId;
+      const latestRunId = typeof candidate.latestRunId === "string" ? candidate.latestRunId : legacyRunId;
+      if (!rootRunId || !latestRunId || typeof candidate.prompt !== "string" || !isRunStatus(candidate.status) || typeof candidate.updatedAt !== "string") return [];
+      return [{
+        rootRunId,
+        conversationId: typeof candidate.conversationId === "string" ? candidate.conversationId : rootRunId,
+        latestRunId,
+        prompt: cleanHistoryPrompt(candidate.prompt),
+        status: candidate.status,
+        updatedAt: candidate.updatedAt
+      }];
+    }).slice(0, 8);
   } catch {
     return [];
   }
@@ -451,6 +469,57 @@ function ToolRow({ projection, output }: { projection: ToolProjection; output: s
   </Collapsible>;
 }
 
+function ConversationRunTurn({
+  run,
+  copied,
+  onCopy
+}: {
+  run: ConversationRunView;
+  copied: boolean;
+  onCopy: (runId: string, answer: string) => void;
+}): ReactElement {
+  const { answer, reasoning, toolOutput, tools, diffs, files } = useMemo(() => projectRunEvents(run.events), [run.events]);
+  const snapshot = run.snapshot;
+  const isRunning = !isTerminalStatus(snapshot.status);
+  const [reasoningOpen, setReasoningOpen] = useState(isRunning);
+  const [executionOpen, setExecutionOpen] = useState(isRunning);
+  const activityCount = tools.length + files.length + diffs.length + (reasoning ? 1 : 0);
+
+  useEffect(() => {
+    setExecutionOpen(isRunning);
+    setReasoningOpen(isRunning);
+  }, [isRunning]);
+
+  return <section className="conversation-turn" data-run-id={run.runId}>
+    <article className="user-turn">
+      <div className="user-bubble">{run.visiblePrompt}</div>
+      <div className="turn-meta"><span>{formatTime(snapshot.createdAt)}</span><span>{modelLabel(snapshot.model)}</span></div>
+    </article>
+
+    <article className="assistant-turn">
+      <div className="assistant-heading"><span className="assistant-mark"><Command aria-hidden="true" /></span><span><strong>OpenRigor</strong><small className={`run-status status-${snapshot.status}`}><span />{statusLabel(snapshot.status)}</small></span><code>{compactId(snapshot.runId)}</code></div>
+
+      {!answer && isRunning ? <div className="thinking-line"><span className="thinking-mark"><span /><span /><span /></span><span>{snapshot.currentStep ?? "正在分析任务"}</span></div> : null}
+
+      {activityCount ? <Collapsible className="execution-group" open={executionOpen} onOpenChange={setExecutionOpen}>
+        <CollapsibleTrigger asChild><button type="button" className="execution-summary"><Activity aria-hidden="true" /><span>{isRunning ? `正在执行 · ${activityCount} 个步骤` : `执行了 ${activityCount} 个步骤`}</span><small>{snapshot.progress}%</small><ChevronDown aria-hidden="true" /></button></CollapsibleTrigger>
+        <CollapsibleContent className="execution-content">
+          {reasoning ? <Collapsible className="activity-row reasoning-row" open={reasoningOpen} onOpenChange={setReasoningOpen}>
+            <CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state reasoning-state"><BrainCircuit aria-hidden="true" /></span><span className="activity-copy"><strong>深度思考</strong><small>{snapshot.currentStep ?? "分析任务与工作区"}</small></span><span className="activity-phase">{isRunning ? "进行中" : "完成"}</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger>
+            <CollapsibleContent className="reasoning-copy">{reasoning}</CollapsibleContent>
+          </Collapsible> : null}
+          {tools.map((projection) => <ToolRow key={projection.event.tool.callId} projection={projection} output={projection.event.tool.outputSummary ?? toolOutput.get(projection.event.tool.callId)} />)}
+          {files.map((event) => <div className="activity-row artifact-row" key={event.eventId}><span className="activity-state file-state"><FileCode2 aria-hidden="true" /></span><span className="activity-copy"><strong>生成文件</strong><small>{event.file.name}</small></span><span className="activity-phase">修订 {event.file.revision}</span></div>)}
+          {diffs.map((event) => <Collapsible className="activity-row" key={event.eventId}><CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state diff-state"><GitCompare aria-hidden="true" /></span><span className="activity-copy"><strong>文件变更</strong><small>{event.part.partId.replace("diff:", "")}</small></span><span className="activity-phase">查看差异</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger><CollapsibleContent className="activity-output"><pre>{event.part.text}</pre></CollapsibleContent></Collapsible>)}
+        </CollapsibleContent>
+      </Collapsible> : null}
+
+      {answer ? <div className="answer-block"><MarkdownText text={answer} /><div className="answer-actions"><button type="button" onClick={() => onCopy(run.runId, answer)}><Copy aria-hidden="true" />{copied ? "已复制" : "复制回答"}</button></div></div> : null}
+      {snapshot.status === "completed" ? <div className="completion-line"><span><Check aria-hidden="true" /></span><strong>任务完成</strong><small>{formatTime(snapshot.updatedAt)}</small></div> : null}
+    </article>
+  </section>;
+}
+
 function ExampleDialog({
   example,
   onClose,
@@ -619,16 +688,12 @@ function AgentDialog({
 
 export function App(): ReactElement {
   const [prompt, setPrompt] = useState("");
-  const [submittedPrompt, setSubmittedPrompt] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("research");
-  const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null);
-  const [events, setEvents] = useState<RunEvent[]>([]);
+  const [conversation, setConversation] = useState<ConversationViewState | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<ModelId>("auto");
   const [effort, setEffort] = useState<Effort>("balanced");
-  const [reasoningOpen, setReasoningOpen] = useState(true);
-  const [executionOpen, setExecutionOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>(loadRecentTasks);
   const [selectedExample, setSelectedExample] = useState<ExampleTask | null>(null);
@@ -638,12 +703,13 @@ export function App(): ReactElement {
   const [followLatest, setFollowLatest] = useState(true);
   const [paletteMode, setPaletteMode] = useState<ComposerPaletteMode>(null);
   const [paletteIndex, setPaletteIndex] = useState(0);
-  const [copiedAnswer, setCopiedAnswer] = useState(false);
+  const [copiedRunId, setCopiedRunId] = useState<string | null>(null);
   const [customInstructions, setCustomInstructions] = useState(() => window.localStorage.getItem("openrigor.instructions") ?? "");
   const eventSource = useRef<EventSource | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
   const viewRequestRef = useRef(0);
   const restoreAbortRef = useRef<AbortController | null>(null);
+  const startAbortRef = useRef<AbortController | null>(null);
   const startingRef = useRef(false);
   const [isStarting, setIsStarting] = useState(false);
   const conversationScroll = useRef<HTMLDivElement | null>(null);
@@ -656,59 +722,26 @@ export function App(): ReactElement {
   useEffect(() => () => {
     eventSource.current?.close();
     restoreAbortRef.current?.abort();
+    startAbortRef.current?.abort();
   }, []);
 
   useEffect(() => {
     window.localStorage.setItem(recentTasksStorageKey, JSON.stringify(recentTasks.slice(0, 8)));
   }, [recentTasks]);
 
-  const answer = useMemo(() => {
-    const parts = new Map<string, string>();
-    for (const event of events) {
-      if (event.type === "part-delta" && event.kind === "text" && !event.partId.startsWith("tool:")) parts.set(event.partId, `${parts.get(event.partId) ?? ""}${event.delta}`);
-      if (event.type === "part" && event.part.kind === "text" && !event.part.partId.startsWith("diff:") && !parts.has(event.part.partId)) parts.set(event.part.partId, event.part.text);
-    }
-    return [...parts.values()].join("\n\n");
-  }, [events]);
+  useEffect(() => {
+    const activeRootRunId = window.localStorage.getItem(activeConversationStorageKey);
+    if (!activeRootRunId) return;
+    const task = recentTasks.find((item) => item.rootRunId === activeRootRunId);
+    if (task) void openRecentTask(task);
+    else window.localStorage.removeItem(activeConversationStorageKey);
+  }, []);
 
-  const reasoning = useMemo(() => {
-    const parts = new Map<string, string>();
-    for (const event of events) {
-      if (event.type === "part-delta" && event.kind === "reasoning") parts.set(event.partId, `${parts.get(event.partId) ?? ""}${event.delta}`);
-      if (event.type === "part" && event.part.kind === "reasoning" && !parts.has(event.part.partId)) parts.set(event.part.partId, event.part.text);
-    }
-    return [...parts.values()].join("\n\n");
-  }, [events]);
-
-  const toolOutput = useMemo(() => {
-    const output = new Map<string, string>();
-    for (const event of events) if (event.type === "part-delta" && event.partId.startsWith("tool:")) {
-      const callId = event.partId.slice(5);
-      output.set(callId, `${output.get(callId) ?? ""}${event.delta}`);
-    }
-    return output;
-  }, [events]);
-
-  const tools = useMemo(() => {
-    const projected = new Map<string, ToolProjection>();
-    events.forEach((event, index) => {
-      if (event.type !== "tool") return;
-      const existing = projected.get(event.tool.callId);
-      projected.set(event.tool.callId, {
-        event,
-        firstAt: existing?.firstAt ?? event.ts,
-        lastAt: event.ts,
-        firstIndex: existing?.firstIndex ?? index
-      });
-    });
-    return [...projected.values()].sort((left, right) => left.firstIndex - right.firstIndex);
-  }, [events]);
-
-  const diffs = useMemo(() => events.filter((event): event is Extract<RunEvent, { type: "part" }> => event.type === "part" && event.part.partId.startsWith("diff:")), [events]);
-  const files = useMemo(() => events.filter((event): event is Extract<RunEvent, { type: "file" }> => event.type === "file"), [events]);
-  const isRunning = Boolean(snapshot && !["completed", "failed", "cancelled"].includes(snapshot.status));
-  const visiblePrompt = submittedPrompt ?? snapshot?.prompt ?? "";
-  const activityCount = tools.length + files.length + diffs.length + (reasoning ? 1 : 0);
+  const latestRun = conversation?.runs.at(-1) ?? null;
+  const snapshot = latestRun?.snapshot ?? null;
+  const isRunning = Boolean(snapshot && !isTerminalStatus(snapshot.status));
+  const visiblePrompt = latestRun?.visiblePrompt ?? "";
+  const renderedEventCount = conversation?.runs.reduce((total, run) => total + run.events.length, 0) ?? 0;
   const hasExplicitContexts = selectedContexts.some((id) => id !== "workspace");
 
   const paletteItems = useMemo<ComposerPaletteItem[]>(() => {
@@ -732,28 +765,18 @@ export function App(): ReactElement {
     const node = conversationScroll.current;
     if (!node || !followLatest) return;
     node.scrollTo({ top: node.scrollHeight, behavior: isRunning ? "auto" : "smooth" });
-  }, [answer.length, events.length, followLatest, isRunning]);
-
-  useEffect(() => {
-    if (isRunning) {
-      setExecutionOpen(true);
-      setReasoningOpen(true);
-    } else if (snapshot) {
-      setExecutionOpen(false);
-      setReasoningOpen(false);
-    }
-  }, [isRunning, snapshot?.status]);
+  }, [conversation?.runs.length, renderedEventCount, followLatest, isRunning]);
 
   function rememberTask(task: RecentTask): void {
     setRecentTasks((previous) => {
-      const existing = previous.find((item) => item.runId === task.runId);
-      const next = existing ? { ...task, prompt: cleanHistoryPrompt(existing.prompt) } : { ...task, prompt: cleanHistoryPrompt(task.prompt) };
-      return [next, ...previous.filter((item) => item.runId !== task.runId)].slice(0, 8);
+      const existing = previous.find((item) => item.rootRunId === task.rootRunId);
+      const next = { ...task, prompt: cleanHistoryPrompt(existing?.prompt ?? task.prompt) };
+      return [next, ...previous.filter((item) => item.rootRunId !== task.rootRunId)].slice(0, 8);
     });
   }
 
   function updateRecentTask(runId: string, patch: Partial<Pick<RecentTask, "status" | "updatedAt">>): void {
-    setRecentTasks((previous) => previous.map((item) => item.runId === runId ? { ...item, ...patch } : item));
+    setRecentTasks((previous) => previous.map((item) => item.latestRunId === runId ? { ...item, ...patch } : item));
   }
 
   function closeStream(nextConnection: ConnectionState = "closed"): void {
@@ -767,22 +790,21 @@ export function App(): ReactElement {
     viewRequestRef.current += 1;
     restoreAbortRef.current?.abort();
     restoreAbortRef.current = null;
+    startAbortRef.current?.abort();
+    startAbortRef.current = null;
     return viewRequestRef.current;
   }
 
   function resetWorkspace(): void {
     beginViewRequest();
-    setSnapshot(null);
-    setEvents([]);
+    setConversation(null);
     setPrompt("");
-    setSubmittedPrompt(null);
-    setReasoningOpen(true);
-    setExecutionOpen(true);
     setSidebarOpen(false);
     setFollowLatest(true);
     setPaletteMode(null);
-    setCopiedAnswer(false);
+    setCopiedRunId(null);
     closeStream("idle");
+    window.localStorage.removeItem(activeConversationStorageKey);
     window.setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
@@ -793,28 +815,23 @@ export function App(): ReactElement {
   }
 
   function consumeEvent(event: RunEvent): void {
-    setEvents((previous) => previous.some((item) => item.eventId === event.eventId) ? previous : [...previous, event]);
+    setConversation((previous) => previous ? applyRunEvent(previous, event) : previous);
     if (event.type === "snapshot") {
-      setSnapshot(event.snapshot);
-      rememberTask({ runId: event.snapshot.runId, prompt: event.snapshot.prompt, status: event.snapshot.status, updatedAt: event.snapshot.updatedAt });
+      const eventSnapshot = event.snapshot as ConversationRunSnapshot;
+      const rootRunId = eventSnapshot.rootRunId ?? eventSnapshot.runId;
+      rememberTask({
+        rootRunId,
+        conversationId: eventSnapshot.conversationId ?? rootRunId,
+        latestRunId: eventSnapshot.runId,
+        prompt: eventSnapshot.prompt,
+        status: eventSnapshot.status,
+        updatedAt: eventSnapshot.updatedAt
+      });
     }
     if (event.type === "status") {
-      setSnapshot((previous) => {
-        if (!previous) return previous;
-        const next: RunSnapshot = { ...previous, status: event.status, progress: event.progress ?? previous.progress, updatedAt: event.ts };
-        if (event.currentStep !== undefined) next.currentStep = event.currentStep;
-        return next;
-      });
       updateRecentTask(event.runId, { status: event.status, updatedAt: event.ts });
     }
     if (event.type === "run-finished") {
-      setSnapshot((previous) => previous ? {
-        ...previous,
-        status: event.status,
-        progress: event.status === "completed" ? 100 : previous.progress,
-        currentStep: event.status === "completed" ? "已完成" : event.status === "cancelled" ? "已停止" : "执行失败",
-        updatedAt: event.ts
-      } : previous);
       updateRecentTask(event.runId, { status: event.status, updatedAt: event.ts });
       closeStream("idle");
     }
@@ -829,7 +846,7 @@ export function App(): ReactElement {
     activeRunIdRef.current = runId;
     const isCurrentSource = (): boolean => eventSource.current === source && activeRunIdRef.current === runId;
     source.onopen = () => { if (isCurrentSource()) setConnection("open"); };
-    source.onerror = () => { if (isCurrentSource()) setConnection("closed"); };
+    source.onerror = () => { if (isCurrentSource()) setConnection(source.readyState === EventSource.CONNECTING ? "connecting" : "closed"); };
     for (const type of eventTypes) source.addEventListener(type, (raw) => {
       if (!isCurrentSource()) return;
       try {
@@ -845,9 +862,14 @@ export function App(): ReactElement {
   async function startRun(nextPrompt = prompt): Promise<void> {
     const cleanPrompt = nextPrompt.trim();
     if (!cleanPrompt || isRunning || startingRef.current) return;
+    const continueFromRunId = snapshot?.runId;
+    const existingRootRunId = conversation?.rootRunId;
+    const conversationTitle = conversation?.runs[0]?.visiblePrompt ?? cleanPrompt;
     startingRef.current = true;
     setIsStarting(true);
     const viewRequest = beginViewRequest();
+    const controller = new AbortController();
+    startAbortRef.current = controller;
     const clientRequestId = createClientRequestId();
     const enabledSkills = skillOptions.filter((skill) => selectedSkills.includes(skill.id));
     const enabledContexts = contextOptions.filter((context) => selectedContexts.includes(context.id));
@@ -860,28 +882,65 @@ export function App(): ReactElement {
 
     setError(null);
     closeStream("idle");
-    setSnapshot(null);
-    setEvents([]);
-    setSubmittedPrompt(cleanPrompt);
-    setReasoningOpen(true);
-    setExecutionOpen(true);
     setFollowLatest(true);
     try {
       const response = await fetch(`${apiBase}/api/runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: requestPrompt, model, mode: "standard", effort, clientRequestId })
+        body: JSON.stringify({
+          prompt: requestPrompt,
+          model,
+          mode: "standard",
+          effort,
+          clientRequestId,
+          ...(continueFromRunId === undefined ? {} : { continueFromRunId })
+        }),
+        signal: controller.signal
       });
-      const body = await response.json() as { runId?: string; error?: string };
+      const body = await response.json() as {
+        runId?: string;
+        status?: "queued" | "running";
+        conversationId?: string;
+        rootRunId?: string;
+        parentRunId?: string;
+        error?: string;
+      };
       if (!response.ok || !body.runId) throw new Error(body.error ?? "无法启动任务");
       if (viewRequestRef.current !== viewRequest) return;
-      rememberTask({ runId: body.runId, prompt: cleanPrompt, status: "queued", updatedAt: new Date().toISOString() });
+
+      const acceptedAt = new Date().toISOString();
+      const rootRunId = body.rootRunId ?? existingRootRunId ?? body.runId;
+      const conversationId = body.conversationId ?? conversation?.conversationId ?? rootRunId;
+      const parentRunId = body.parentRunId ?? continueFromRunId;
+      const acceptedSnapshot: ConversationRunSnapshot = {
+        runId: body.runId,
+        conversationId,
+        rootRunId,
+        status: body.status ?? "queued",
+        prompt: requestPrompt,
+        model,
+        mode: "standard",
+        effort,
+        createdAt: acceptedAt,
+        updatedAt: acceptedAt,
+        progress: 0,
+        ...(parentRunId === undefined ? {} : { parentRunId })
+      };
+      const acceptedRun: ConversationRunView = { runId: body.runId, visiblePrompt: cleanPrompt, snapshot: acceptedSnapshot, events: [] };
+      setConversation((previous) => {
+        if (!continueFromRunId) return { conversationId, rootRunId, runs: [acceptedRun] };
+        if (!previous || previous.rootRunId !== rootRunId || previous.runs.at(-1)?.runId !== continueFromRunId) return previous;
+        return { ...previous, conversationId, runs: [...previous.runs, acceptedRun] };
+      });
+      rememberTask({ rootRunId, conversationId, latestRunId: body.runId, prompt: conversationTitle, status: acceptedSnapshot.status, updatedAt: acceptedAt });
+      window.localStorage.setItem(activeConversationStorageKey, rootRunId);
       subscribe(body.runId);
       setPrompt("");
     } catch (caught) {
-      if (viewRequestRef.current !== viewRequest) return;
+      if (viewRequestRef.current !== viewRequest || controller.signal.aborted) return;
       setError(caught instanceof Error ? caught.message : "无法启动任务");
     } finally {
+      if (startAbortRef.current === controller) startAbortRef.current = null;
       startingRef.current = false;
       setIsStarting(false);
     }
@@ -889,9 +948,15 @@ export function App(): ReactElement {
 
   async function cancelRun(): Promise<void> {
     if (!snapshot || !isRunning) return;
+    const runId = snapshot.runId;
+    const viewRequest = viewRequestRef.current;
     try {
-      await fetch(`${apiBase}/api/runs/${snapshot.runId}/cancel`, { method: "POST" });
+      const response = await fetch(`${apiBase}/api/runs/${runId}/cancel`, { method: "POST" });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? "无法停止任务");
+      if (viewRequestRef.current === viewRequest && connection === "closed") subscribe(runId);
     } catch (caught) {
+      if (viewRequestRef.current !== viewRequest) return;
       setError(caught instanceof Error ? caught.message : "无法停止任务");
     }
   }
@@ -902,21 +967,30 @@ export function App(): ReactElement {
     restoreAbortRef.current = controller;
     setError(null);
     try {
-      const response = await fetch(`${apiBase}/api/runs/${task.runId}`, { signal: controller.signal });
-      const body = await response.json() as { snapshot?: RunSnapshot; events?: RunEvent[]; error?: string };
-      if (!response.ok || !body.snapshot) throw new Error(body.error ?? "无法读取任务");
+      const response = await fetch(`${apiBase}/api/runs/${task.latestRunId}`, { signal: controller.signal });
+      const body = await response.json() as ConversationRestorePayload & { error?: string };
+      const restored = restoreConversation(body);
+      if (!response.ok || !restored) throw new Error(body.error ?? "无法读取任务");
       if (viewRequestRef.current !== viewRequest) return;
       closeStream("idle");
-      setSubmittedPrompt(task.prompt);
+      setConversation(restored);
       setPrompt("");
-      setEvents(body.events ?? []);
-      setSnapshot(body.snapshot);
       setFollowLatest(true);
-      setExecutionOpen(true);
-      setReasoningOpen(true);
       setPaletteMode(null);
-      rememberTask({ runId: body.snapshot.runId, prompt: body.snapshot.prompt, status: body.snapshot.status, updatedAt: body.snapshot.updatedAt });
-      if (!isTerminalStatus(body.snapshot.status)) subscribe(body.snapshot.runId);
+      setSidebarOpen(false);
+      setCopiedRunId(null);
+      window.localStorage.setItem(activeConversationStorageKey, restored.rootRunId);
+      const restoredLatest = restored.runs.at(-1)!;
+      rememberTask({
+        rootRunId: restored.rootRunId,
+        conversationId: restored.conversationId,
+        latestRunId: restoredLatest.runId,
+        prompt: restored.runs[0]?.visiblePrompt ?? task.prompt,
+        status: restoredLatest.snapshot.status,
+        updatedAt: restoredLatest.snapshot.updatedAt
+      });
+      if (!isTerminalStatus(restoredLatest.snapshot.status)) subscribe(restoredLatest.runId);
+      else closeStream("idle");
     } catch (caught) {
       if (viewRequestRef.current !== viewRequest || controller.signal.aborted) return;
       setError(caught instanceof Error ? caught.message : "无法读取任务");
@@ -951,12 +1025,11 @@ export function App(): ReactElement {
     window.setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
-  async function copyAnswer(): Promise<void> {
-    if (!answer) return;
+  async function copyAnswer(runId: string, answer: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(answer);
-      setCopiedAnswer(true);
-      window.setTimeout(() => setCopiedAnswer(false), 1800);
+      setCopiedRunId(runId);
+      window.setTimeout(() => setCopiedRunId((current) => current === runId ? null : current), 1800);
     } catch {
       setError("无法复制回答，请检查浏览器权限");
     }
@@ -1028,7 +1101,7 @@ export function App(): ReactElement {
       <button className="account-switcher" type="button" onClick={(event) => openWorkspaceDialog("agent", event.currentTarget)}><span><strong>Personal</strong><small>Owner</small></span><span className="plan-label">Local</span></button>
 
       <nav className="nav-list" aria-label="产品导航">
-        <button type="button" className={snapshot ? "nav-item" : "nav-item active"} onClick={resetWorkspace}><Plus aria-hidden="true" /><span>新任务</span></button>
+        <button type="button" className={conversation ? "nav-item" : "nav-item active"} onClick={resetWorkspace}><Plus aria-hidden="true" /><span>新任务</span></button>
         <button type="button" className="nav-item" onClick={(event) => openWorkspaceDialog("knowledge", event.currentTarget)}><Library aria-hidden="true" /><span>知识与上下文</span>{visibleContextCount ? <small>{visibleContextCount}</small> : null}</button>
         <button type="button" className="nav-item" onClick={(event) => openWorkspaceDialog("agent", event.currentTarget)}><Layers3 aria-hidden="true" /><span>Agent 与技能</span>{selectedSkills.length ? <small>{selectedSkills.length}</small> : null}</button>
       </nav>
@@ -1040,7 +1113,7 @@ export function App(): ReactElement {
 
       <section className="sidebar-section recent-section">
         <div className="sidebar-label"><span>任务</span></div>
-        {recentTasks.length ? recentTasks.slice(0, 5).map((task) => <button type="button" className={snapshot?.runId === task.runId ? "recent-item active" : "recent-item"} key={task.runId} onClick={() => void openRecentTask(task)}><span className={`recent-status status-${task.status}`} /><span><strong>{task.prompt}</strong><small>{statusLabel(task.status)} · {formatTime(task.updatedAt)}</small></span></button>) : <div className="history-empty"><Clock3 aria-hidden="true" /><span>发送任务后，最近活动会显示在这里</span></div>}
+        {recentTasks.length ? recentTasks.slice(0, 5).map((task) => <button type="button" className={conversation?.rootRunId === task.rootRunId ? "recent-item active" : "recent-item"} key={task.rootRunId} onClick={() => void openRecentTask(task)}><span className={`recent-status status-${task.status}`} /><span><strong>{task.prompt}</strong><small>{statusLabel(task.status)} · {formatTime(task.updatedAt)}</small></span></button>) : <div className="history-empty"><Clock3 aria-hidden="true" /><span>发送任务后，最近活动会显示在这里</span></div>}
       </section>
 
       <div className="sidebar-bottom">
@@ -1062,8 +1135,8 @@ export function App(): ReactElement {
         </div>
       </header>
 
-      <div className={snapshot ? "main-body conversation-mode" : "main-body"}>
-        {!snapshot ? <section className="launch-view">
+      <div className={conversation ? "main-body conversation-mode" : "main-body"}>
+        {!conversation ? <section className="launch-view">
           <div className="launch-inner">
             <h1>{greeting()}</h1>
             <div className="workspace-context"><Folder aria-hidden="true" /><span>OpenRigor</span><small>main</small></div>
@@ -1087,32 +1160,7 @@ export function App(): ReactElement {
         </section> : <section className="conversation-view">
           <div className="conversation-scroll" ref={conversationScroll} onScroll={handleConversationScroll}>
             <div className="conversation-column">
-              <article className="user-turn">
-                <div className="user-bubble">{visiblePrompt}</div>
-                <div className="turn-meta"><span>{formatTime(snapshot.createdAt)}</span><span>{modelLabel(snapshot.model)}</span></div>
-              </article>
-
-              <article className="assistant-turn">
-                <div className="assistant-heading"><span className="assistant-mark"><Command aria-hidden="true" /></span><span><strong>OpenRigor</strong><small className={`run-status status-${snapshot.status}`}><span />{statusLabel(snapshot.status)}</small></span><code>{compactId(snapshot.runId)}</code></div>
-
-                {!answer && isRunning ? <div className="thinking-line"><span className="thinking-mark"><span /><span /><span /></span><span>{snapshot.currentStep ?? "正在分析任务"}</span></div> : null}
-
-                {activityCount ? <Collapsible className="execution-group" open={executionOpen} onOpenChange={setExecutionOpen}>
-                  <CollapsibleTrigger asChild><button type="button" className="execution-summary"><Activity aria-hidden="true" /><span>{isRunning ? `正在执行 · ${activityCount} 个步骤` : `执行了 ${activityCount} 个步骤`}</span><small>{snapshot.progress}%</small><ChevronDown aria-hidden="true" /></button></CollapsibleTrigger>
-                  <CollapsibleContent className="execution-content">
-                    {reasoning ? <Collapsible className="activity-row reasoning-row" open={reasoningOpen} onOpenChange={setReasoningOpen}>
-                      <CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state reasoning-state"><BrainCircuit aria-hidden="true" /></span><span className="activity-copy"><strong>深度思考</strong><small>{snapshot.currentStep ?? "分析任务与工作区"}</small></span><span className="activity-phase">{isRunning ? "进行中" : "完成"}</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger>
-                      <CollapsibleContent className="reasoning-copy">{reasoning}</CollapsibleContent>
-                    </Collapsible> : null}
-                    {tools.map((projection) => <ToolRow key={projection.event.tool.callId} projection={projection} output={projection.event.tool.outputSummary ?? toolOutput.get(projection.event.tool.callId)} />)}
-                    {files.map((event) => <div className="activity-row artifact-row" key={event.eventId}><span className="activity-state file-state"><FileCode2 aria-hidden="true" /></span><span className="activity-copy"><strong>生成文件</strong><small>{event.file.name}</small></span><span className="activity-phase">修订 {event.file.revision}</span></div>)}
-                    {diffs.map((event) => <Collapsible className="activity-row" key={event.eventId}><CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state diff-state"><GitCompare aria-hidden="true" /></span><span className="activity-copy"><strong>文件变更</strong><small>{event.part.partId.replace("diff:", "")}</small></span><span className="activity-phase">查看差异</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger><CollapsibleContent className="activity-output"><pre>{event.part.text}</pre></CollapsibleContent></Collapsible>)}
-                  </CollapsibleContent>
-                </Collapsible> : null}
-
-                {answer ? <div className="answer-block"><MarkdownText text={answer} /><div className="answer-actions"><button type="button" onClick={() => void copyAnswer()}><Copy aria-hidden="true" />{copiedAnswer ? "已复制" : "复制回答"}</button></div></div> : null}
-                {snapshot.status === "completed" ? <div className="completion-line"><span><Check aria-hidden="true" /></span><strong>任务完成</strong><small>{formatTime(snapshot.updatedAt)}</small></div> : null}
-              </article>
+              {conversation.runs.map((run) => <ConversationRunTurn key={run.runId} run={run} copied={copiedRunId === run.runId} onCopy={(runId, answer) => { void copyAnswer(runId, answer); }} />)}
             </div>
           </div>
           {!followLatest ? <button type="button" className="jump-latest" onClick={() => { setFollowLatest(true); conversationScroll.current?.scrollTo({ top: conversationScroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown aria-hidden="true" />跳到最新</button> : null}

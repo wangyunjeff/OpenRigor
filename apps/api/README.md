@@ -32,7 +32,11 @@ Prerequisites:
 - The default sandbox is `workspace-write`. Use `read-only` when the task should only inspect files.
 - Interactive approval responses are not implemented yet. The default `never` policy lets sandbox-allowed work proceed, while unexpected app-server approval/input requests are declined instead of hanging.
 
-Optional settings are documented in the repository `.env.example`. The app-server process is shared, each HTTP run starts a separate ephemeral Codex thread, and cancellation is forwarded through `turn/interrupt`. Set `OPENRIGOR_CODEX_EPHEMERAL=false` when you intentionally want Codex to keep local rollout history.
+Optional settings are documented in the repository `.env.example`. The app-server process is shared. A root HTTP run starts one Codex thread; a follow-up `POST /api/runs` with `continueFromRunId` creates a separate OpenRigor run but sends another `turn/start` to that same live Codex thread. Cancellation is forwarded through `turn/interrupt` for the active run.
+
+Follow-ups are accepted only from the latest terminal run in a conversation, and only one run per conversation may be active. `GET /api/runs/:runId` keeps the original `{ snapshot, events }` fields and adds an ordered `conversation.runs` chain for full UI restoration. The accepted response and snapshots expose `conversationId`, `rootRunId`, and (for follow-ups) `parentRunId`.
+
+The default `OPENRIGOR_CODEX_EPHEMERAL=true` is intentionally live-process only. Both the OpenRigor run index and ephemeral Codex history disappear on API/app-server restart. Set the flag to `false` only when local Codex rollout files are desired; cold `thread/resume` recovery and durable OpenRigor metadata are still not implemented.
 
 The adapter keeps the public protocol stable: agent message deltas become `part-delta` events under `answer`, reasoning deltas become `reasoning` parts, command/MCP/search/file items become `tool` events, file changes emit `file` metadata, token notifications are attached to `run-finished.usage`, and `turn/completed` becomes the terminal `run-finished` event.
 

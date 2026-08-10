@@ -415,6 +415,7 @@ OpenRigor 当前通过 stdio 启动本机已有登录态的 `codex app-server`�
 initialize -> initialized
 thread/start -> thread id
 turn/start -> turn id
+后续消息 -> 同一 thread id 的新 turn/start
 
 item/started
 item/reasoning/*Delta
@@ -427,7 +428,7 @@ turn/completed
 
 API 将这些通知翻译为版本化 `RunEvent`，再经 SSE 发送给浏览器；停止任务调用 `turn/interrupt`。实测已经覆盖文本流、reasoning、Shell 工具、用量、完成态和取消态。Codex 登录凭证只由本地子进程读取，不进入浏览器事件或前端配置。
 
-当前边界必须明确：这是“老板自己先用”的本地运行时，不是生产隔离方案。线程和 OpenRigor 事件仍保存在进程内存中；侧栏最近任务只在浏览器 `localStorage` 保存 run 引用，并通过 `GET /api/runs/:runId` 回读，因此 API 重启后不构成持久历史。工作目录由服务端环境变量固定；审批 UI 尚未接入；附件、多轮续聊和重启恢复仍待实现。托管版仍需按本报告后续章节迁移到持久队列、独立 worker、PostgreSQL 事件表和受控沙箱。
+当前边界必须明确：这是“老板自己先用”的本地运行时，不是生产隔离方案。OpenRigor run/event 与 conversation 索引仍保存在 API 进程内存中；侧栏最近会话只在浏览器 `localStorage` 保存根 run 引用，并通过 `GET /api/runs/:runId` 回读完整 run chain，因此 API 重启后不构成持久历史。当前多轮续聊会为每条消息创建独立 run，并在同一存活的 Codex thread 上追加 turn；默认 ephemeral thread 与 app-server/API 进程同生命周期，尚不支持冷恢复。工作目录由服务端环境变量固定；审批 UI 和附件尚未接入。托管版仍需按本报告后续章节迁移到持久队列、独立 worker、PostgreSQL 事件表和受控沙箱。
 
 ### 5.1.2 当前前端组件策略
 
@@ -476,7 +477,7 @@ EventSource
 
 模型入口使用 Radix 三级子菜单组织“模式 / 模型 / 推理强度”；知识上下文、技能和偏好通过 Dialog 选择，选中项在 Composer 中可见并可移除。技能目录目前覆盖浏览器、前端、文档、PDF、演示文稿、表格、论文分析、网页测试、图像生成和技能创建等 Codex 工作流，并支持搜索和滚动浏览。这里必须保留实现边界：当前“知识”和“技能”是本地选项及请求前置指令，尚不是服务端知识摄取、向量检索、Skill 包安装或权限系统；自定义指令只保存在当前浏览器 `localStorage`。
 
-当前代码已经接入 Radix Dropdown Menu、Dialog、Collapsible、Tooltip、Lucide 和 GFM Markdown，并实现浏览器侧最近任务列表、活动任务高亮与按 run id 回读。后续优先补 Artifact/CodeBlock、审批确认、附件、多轮续聊和服务端持久历史；不安装 AI Elements 或 prompt-kit 全家桶，也不让第三方组件反向决定协议。
+当前代码已经接入 Radix Dropdown Menu、Dialog、Collapsible、Tooltip、Lucide 和 GFM Markdown，并实现浏览器侧最近会话列表、活动任务高亮、按 run id 回读完整 conversation chain，以及同一 Codex thread 的顺序多轮续聊。后续优先补 Artifact/CodeBlock、审批确认、附件、排队 follow-up 和服务端持久历史；不安装 AI Elements 或 prompt-kit 全家桶，也不让第三方组件反向决定协议。
 
 ### 5.2 控制面数据模型
 
@@ -585,7 +586,7 @@ type RunEvent =
 - 真实 Codex app-server 运行与 `RunEvent`/SSE 流已贯通。
 - 案例预览确认、预填编辑、模型/effort 选择、知识上下文、Skills/偏好、停止、过程展示和浏览器侧最近任务回读已进入桌面工作台。
 - 提交链路已增加发送启动锁与 `clientRequestId` 幂等键；历史任务恢复和 SSE 回调只接受当前视图、当前 run 的结果，避免重复任务和旧响应污染。
-- 下一步应先补审批、附件、多轮续聊和持久历史，再把 API/worker/数据库/沙箱边界拆开。
+- 下一步应先补审批、附件、排队 follow-up 和持久历史，再把 API/worker/数据库/沙箱边界拆开。
 - 只有任务跨浏览器、API 和 worker 重启仍可恢复时，才算达到下面 Phase 0 的 durable 验收，不应把内存态 alpha 对外称为云端 MVP。
 
 ### Phase 0：洁净室规格与技术验证（2-3 周）

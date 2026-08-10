@@ -169,12 +169,14 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 /* Conversation */
 .conversation-view { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; }
 .conversation-scroll { width: min(768px, calc(100% - 36px)); min-width: 0; overflow-y: auto; padding: 24px 16px 40px; }
-.conversation-column { width: 100%; display: flex; flex-direction: column; gap: 24px; }
+.conversation-column { width: 100%; display: flex; flex-direction: column; }
+.conversation-turn { min-width: 0; display: flex; flex-direction: column; gap: 24px; padding-bottom: 35px; }
+.conversation-turn + .conversation-turn { border-top: 1px solid var(--line); padding-top: 30px; }
 .user-turn { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .user-bubble { max-width: 86%; border: 1px solid var(--line); border-radius: 13px; background: rgba(255, 255, 255, 0.075); color: var(--text); padding: 10px 14px; font-size: 14px; font-weight: 500; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 8px 20px rgba(0,0,0,.1); }
 .turn-meta { display: flex; gap: 9px; color: var(--faint); font: 9px var(--mono); }
 .turn-meta span + span { border-left: 1px solid var(--line); padding-left: 9px; }
-.assistant-turn { min-width: 0; padding-bottom: 35px; }
+.assistant-turn { min-width: 0; }
 .assistant-heading { min-height: 29px; gap: 9px; }
 .assistant-heading > span:nth-child(2) { min-width: 0; display: flex; align-items: center; gap: 9px; }
 .assistant-heading strong { color: var(--text-soft); font-size: 13px; font-weight: 650; }

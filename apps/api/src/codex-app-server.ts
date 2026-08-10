@@ -24,6 +24,8 @@ export interface CodexTurnResult {
 export interface CodexRunOptions {
   prompt: string;
   cwd: string;
+  /** Existing live app-server thread to append this turn to. */
+  threadId?: string;
   model?: string;
   effort?: string;
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
@@ -89,6 +91,12 @@ function timeoutValue(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && value !== undefined && value > 0 ? value : fallback;
 }
 
+function notificationTurnId(params: Record<string, unknown> | null): string | undefined {
+  const directTurnId = stringValue(params?.turnId);
+  if (directTurnId) return directTurnId;
+  return stringValue(asRecord(params?.turn)?.id);
+}
+
 /**
  * Small JSONL JSON-RPC client for the local Codex app-server.
  *
@@ -112,18 +120,24 @@ export class CodexAppServerClient {
   public async run(options: CodexRunOptions, callbacks: CodexRunCallbacks = {}): Promise<CodexTurnResult> {
     await this.ensureStarted();
 
-    const threadParams: Record<string, unknown> = {
-      cwd: options.cwd,
-      sandbox: options.sandbox ?? "workspace-write",
-      approvalPolicy: options.approvalPolicy ?? "never",
-      ephemeral: options.ephemeral ?? false
-    };
-    if (options.model && options.model !== "auto") threadParams.model = options.model;
+    let threadId = options.threadId;
+    if (!threadId) {
+      const threadParams: Record<string, unknown> = {
+        cwd: options.cwd,
+        sandbox: options.sandbox ?? "workspace-write",
+        approvalPolicy: options.approvalPolicy ?? "never",
+        ephemeral: options.ephemeral ?? false
+      };
+      if (options.model && options.model !== "auto") threadParams.model = options.model;
 
-    const threadResponse = await this.request("thread/start", threadParams);
-    const thread = asRecord(asRecord(threadResponse)?.thread);
-    const threadId = stringValue(thread?.id);
-    if (!threadId) throw new Error("Codex app-server returned no thread id");
+      const threadResponse = await this.request("thread/start", threadParams);
+      const thread = asRecord(asRecord(threadResponse)?.thread);
+      threadId = stringValue(thread?.id);
+      if (!threadId) throw new Error("Codex app-server returned no thread id");
+    }
+    if (this.activeTurns.has(threadId)) {
+      throw new Error(`Codex thread already has an active turn: ${threadId}`);
+    }
 
     let turnId: string | undefined;
     let resolveCompletion: ((result: CodexTurnResult) => void) | undefined;
@@ -150,12 +164,16 @@ export class CodexAppServerClient {
       try {
         turnResponse = await this.request("turn/start", turnParams, timeoutValue(this.options.turnTimeoutMs, DEFAULT_TURN_TIMEOUT_MS));
       } catch (error) {
-        if (active.turnId) void this.interrupt(threadId, active.turnId).catch(() => undefined);
+        if (active.turnId) await this.interrupt(threadId, active.turnId).catch(() => undefined);
         throw error;
       }
       const turn = asRecord(asRecord(turnResponse)?.turn);
       turnId = stringValue(turn?.id);
       if (!turnId) throw new Error("Codex app-server returned no turn id");
+      if (active.turnId && active.turnId !== turnId) {
+        await this.interrupt(threadId, turnId).catch(() => undefined);
+        throw new Error(`Codex turn id mismatch: ${active.turnId} != ${turnId}`);
+      }
       active.turnId = turnId;
       callbacks.onSession?.({ threadId, turnId });
 
@@ -167,8 +185,9 @@ export class CodexAppServerClient {
         );
       } catch (error) {
         // A timed-out turn must not keep running invisibly and consuming local
-        // resources after the HTTP run has failed.
-        void this.interrupt(threadId, turnId).catch(() => undefined);
+        // resources after the HTTP run has failed. Keep this turn registered
+        // until the interrupt request has at least been acknowledged.
+        await this.interrupt(threadId, turnId).catch(() => undefined);
         throw error;
       }
     } finally {
@@ -308,19 +327,27 @@ export class CodexAppServerClient {
     const threadId = stringValue(params?.threadId);
     if (threadId) {
       const active = this.activeTurns.get(threadId);
-      if (message.method === "turn/started" && active) {
-        const turn = asRecord(params?.turn);
-        const startedTurnId = stringValue(turn?.id);
-        if (startedTurnId) active.turnId = startedTurnId;
+      const eventTurnId = notificationTurnId(params);
+      let matchesActiveTurn = Boolean(active);
+      if (active && message.method === "turn/started" && eventTurnId) {
+        if (active.turnId && active.turnId !== eventTurnId) matchesActiveTurn = false;
+        else active.turnId = eventTurnId;
+      } else if (active && eventTurnId) {
+        // A live thread can have many sequential turns. Late or duplicate
+        // notifications from the previous turn must never enter the new run.
+        matchesActiveTurn = active.turnId === eventTurnId;
       }
-      try {
-        active?.notify?.(notification);
-      } catch {
-        // Consumer exceptions must not break the JSONL reader.
+      if (active && matchesActiveTurn) {
+        try {
+          active.notify?.(notification);
+        } catch {
+          // Consumer exceptions must not break the JSONL reader.
+        }
       }
-      if (message.method === "turn/completed" && active) {
+      if (message.method === "turn/completed" && active && matchesActiveTurn) {
         const turn = asRecord(params?.turn);
-        const completedTurnId = stringValue(turn?.id) ?? active.turnId ?? "";
+        const completedTurnId = stringValue(turn?.id);
+        if (!completedTurnId || completedTurnId !== active.turnId) return;
         const status = turn?.status;
         const resultStatus: CodexTurnResult["status"] = status === "interrupted" ? "interrupted" : status === "failed" ? "failed" : "completed";
         const errorRecord = asRecord(turn?.error);

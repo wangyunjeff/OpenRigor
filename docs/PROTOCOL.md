@@ -23,9 +23,47 @@ Response:
 {
   "runId": "run_01...",
   "status": "queued",
-  "eventsUrl": "/api/runs/run_01.../events"
+  "eventsUrl": "/api/runs/run_01.../events",
+  "conversationId": "conversation_01...",
+  "rootRunId": "run_01..."
 }
 ```
+
+## Continue a conversation
+
+Every user turn remains an independent run with its own status, event sequence, SSE URL, cancellation, and terminal event. To append a turn to the same Codex conversation, submit a new run using the latest terminal run id:
+
+```http
+POST /api/runs
+Content-Type: application/json
+
+{
+  "prompt": "Now turn that into an implementation plan",
+  "continueFromRunId": "run_01...",
+  "clientRequestId": "web_01J..."
+}
+```
+
+The accepted follow-up has a new `runId`, preserves the original `conversationId` and `rootRunId`, and reports the direct `parentRunId`. The local API returns `409` when the source run is not terminal, is not the latest run in its conversation, or another run in that conversation is active. This prevents concurrent turns from overwriting the single live Codex-thread notification route.
+
+`GET /api/runs/:runId` remains backward-compatible at the top level:
+
+```json
+{
+  "snapshot": { "runId": "run_02...", "rootRunId": "run_01...", "parentRunId": "run_01..." },
+  "events": [],
+  "conversation": {
+    "conversationId": "conversation_01...",
+    "rootRunId": "run_01...",
+    "runs": [
+      { "snapshot": { "runId": "run_01..." }, "events": [] },
+      { "snapshot": { "runId": "run_02..." }, "events": [] }
+    ]
+  }
+}
+```
+
+The `conversation.runs` chain is ordered from root to latest, so restoring either a root or child run can rebuild the whole visible conversation and recover the root item used by recent-task navigation.
 
 ## SSE envelope
 
@@ -56,7 +94,8 @@ data: {"eventId":"run_01:4","runId":"run_01","sequence":4,"ts":"2026-08-09T12:00
 - Unknown event types must be ignored but logged.
 - Event order is guaranteed only within one `runId` and `sequence`.
 - Delivery is at least once; consumers must be idempotent.
-- `clientRequestId` is optional and scoped to the current API process in the local alpha; repeating a `POST /api/runs` with the same key replays the original `runId` instead of starting another run. Production must move this index into the durable control plane.
+- `clientRequestId` is optional and scoped to the current API process in the local alpha; repeating a `POST /api/runs` with the same key and normalized payload replays the original `runId` instead of starting another run. Reusing that key with a different prompt, continuation source, or execution payload returns `409`. Production must move this index into the durable control plane.
+- `conversationId`, `rootRunId`, `parentRunId`, `continueFromRunId`, and the `conversation` detail object are additive protocol-v0 fields. Older consumers may continue using only `snapshot` and `events`.
 - Payloads must never contain provider secrets, session cookies, or raw sandbox credentials.
 - Additive fields are compatible; changing a field's meaning requires a protocol version.
 
@@ -74,3 +113,5 @@ The local alpha keeps the public `RunEvent` contract stable while adapting the C
 | `turn/completed` | `run-finished` |
 
 Unknown provider notifications are ignored by the adapter and never forwarded verbatim. This prevents provider-specific payloads or credentials from becoming part of the browser-facing contract.
+
+For the local live process, the first run calls `thread/start` once and every accepted follow-up calls `turn/start` with the same `threadId`. The default ephemeral thread exists only in that app-server process. OpenRigor's run/conversation indexes are also in API memory, so API or app-server restart recovery is deliberately outside this alpha contract; cold persisted-thread recovery would additionally require `thread/resume` and durable server metadata.
