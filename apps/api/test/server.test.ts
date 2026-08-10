@@ -64,6 +64,25 @@ test("creates an ordered conversation chain while preserving the legacy run deta
     assert.equal(solUltraDetail.snapshot.mode, "ultra");
     assert.equal(solUltraDetail.snapshot.effort, "max");
 
+    const routedResponse = await fetch(`${baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "TokenResearch route",
+        model: "gpt-5.6-luna",
+        mode: "ultra",
+        effort: "low",
+        routing: "tokenresearch"
+      })
+    });
+    assert.equal(routedResponse.status, 202);
+    const routed = await routedResponse.json() as AcceptedRun;
+    const routedDetail = await waitForTerminal(baseUrl, routed.runId);
+    assert.equal(routedDetail.snapshot.routing, "tokenresearch");
+    assert.equal(routedDetail.snapshot.model, "gpt-5.6-sol");
+    assert.equal(routedDetail.snapshot.mode, "ultra");
+    assert.equal(routedDetail.snapshot.effort, "max");
+
     const rootRequest = {
       prompt: "  root prompt  ",
       model: " auto ",

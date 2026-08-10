@@ -65,3 +65,19 @@ test("normalizes and bounds the run id used for conversation continuation", () =
     /continueFromRunId exceeds 200 characters/
   );
 });
+
+test("normalizes TokenResearch routing to a deterministic Sol Ultra/max coordinator", () => {
+  const request = validateRunRequest({
+    prompt: "route this research",
+    model: "gpt-5.6-luna",
+    mode: "ultra",
+    effort: "low",
+    routing: { id: "tokenresearch" }
+  });
+  assert.equal(request.routing, "tokenresearch");
+  assert.equal(request.model, "gpt-5.6-sol");
+  assert.equal(request.mode, "ultra");
+  assert.equal(request.effort, "max");
+  assert.equal(validateRunRequest({ prompt: "canonical route", routing: "tokenresearch" }).routing, "tokenresearch");
+  assert.throws(() => validateRunRequest({ prompt: "bad route", routing: { id: "unknown" } }), /routing\.id must be tokenresearch/);
+});

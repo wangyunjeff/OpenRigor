@@ -13,6 +13,7 @@ Content-Type: application/json
   "model": "gpt-5.6-sol",
   "mode": "standard",
   "effort": "medium",
+  "routing": "tokenresearch",
   "clientRequestId": "web_01J..."
 }
 ```
@@ -22,6 +23,7 @@ Content-Type: application/json
 - `model` accepts `auto`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`. `auto` keeps the model chosen by the local Codex runtime; custom provider model IDs remain wire-compatible.
 - `effort` is the single-model reasoning budget: `low`, `medium`, `high`, `xhigh`, or `max`.
 - `mode` is `standard` or `ultra`. Ultra is a multi-agent orchestration mode, not a sixth reasoning-effort level. An Ultra snapshot is normalized to `effort: "max"` while the local Codex adapter sends its dedicated `ultra` execution value.
+- `routing` is optional and additive. The `tokenresearch` strategy forces the server-side coordinator to `model: "gpt-5.6-sol"`, `mode: "ultra"`, and `effort: "max"`, regardless of conflicting model or effort fields. The local Codex adapter adds coordinator guidance to use the configured `luna-worker` profile (`gpt-5.6-luna`/`max`) through local collaboration tools; it does not claim to invoke a provider scheduler API.
 - Ultra requires an explicit Sol or Terra selection. Luna supports up to `max`; `auto`, Luna, and custom model IDs with `mode: "ultra"` return `400` so the runtime cannot silently resolve Auto to an incompatible model.
 - Protocol-v0 aliases remain accepted for old clients: `fast` -> `low`, `balanced` -> `medium`, `deep` -> `max`, and `cluster` -> `ultra`.
 

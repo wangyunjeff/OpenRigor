@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
+import type { RunRoutingStrategyId } from "@openrigor/protocol";
 
 /** A JSON-RPC message emitted by the local Codex app-server. */
 export interface CodexNotification {
@@ -31,6 +32,12 @@ export interface CodexRunOptions {
   threadId?: string;
   model?: string;
   effort?: CodexReasoningEffort;
+  /**
+   * Local routing hint. This is intentionally translated into prompt
+   * guidance only; the app-server protocol does not expose a provider-side
+   * scheduler/delegation API we can safely claim to control.
+   */
+  routing?: RunRoutingStrategyId;
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   approvalPolicy?: "untrusted" | "on-request" | "never";
   ephemeral?: boolean;
@@ -92,6 +99,18 @@ function idKey(value: string | number | null | undefined): string {
 
 function timeoutValue(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && value !== undefined && value > 0 ? value : fallback;
+}
+
+/**
+ * Future routing strategies belong in this explicit local policy boundary.
+ * Today TokenResearch provides deterministic coordinator instructions and
+ * relies on the local Codex collaboration tools for child-agent scheduling.
+ * The explicit agent profile remains in the prompt so this boundary can be
+ * replaced by a first-party scheduler when one is available.
+ */
+function routedPrompt(prompt: string, routing: RunRoutingStrategyId | undefined): string {
+  if (routing !== "tokenresearch") return prompt;
+  return `${prompt}\n\n[OpenRigor routing: tokenresearch]\nYou are the coordinator running on gpt-5.6-sol with Ultra orchestration. For independent work, proactively delegate bounded subtasks through the local collaboration tools using the luna-worker profile (gpt-5.6-luna, max reasoning effort), then synthesize and verify the child results. Treat this as local runtime guidance: do not claim that a provider-side scheduler or delegation API was invoked unless the runtime explicitly reports it.`;
 }
 
 function notificationTurnId(params: Record<string, unknown> | null): string | undefined {
@@ -158,7 +177,7 @@ export class CodexAppServerClient {
     };
     this.activeTurns.set(threadId, active);
     try {
-      const input = [{ type: "text", text: options.prompt }];
+      const input = [{ type: "text", text: routedPrompt(options.prompt, options.routing) }];
       const turnParams: Record<string, unknown> = { threadId, input };
       if (options.model && options.model !== "auto") turnParams.model = options.model;
       if (options.effort) turnParams.effort = options.effort;

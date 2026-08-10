@@ -53,6 +53,10 @@ input.on("line", (line) => {
       fail(message.id, `unexpected Luna params: ${JSON.stringify({ model: message.params?.model, effort: message.params?.effort })}`);
       return;
     }
+    if (prompt.includes("[OpenRigor routing: tokenresearch]") && (threadModel !== "gpt-5.6-sol" || message.params?.model !== "gpt-5.6-sol" || message.params?.effort !== "ultra")) {
+      fail(message.id, `unexpected TokenResearch coordinator params: ${JSON.stringify({ threadModel, model: message.params?.model, effort: message.params?.effort })}`);
+      return;
+    }
     write({ id: message.id, result: { turn: { id: turnId, status: "inProgress", items: [] } } });
     write({ method: "turn/started", params: { threadId: "thread_fake", turn: { id: turnId, status: "inProgress", items: [] } } });
     write({ method: "item/agentMessage/delta", params: { threadId: "thread_fake", turnId, itemId: `item_${turnStarts}`, delta: `answer:${prompt}` } });

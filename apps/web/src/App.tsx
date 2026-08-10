@@ -89,6 +89,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuPortal,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -127,10 +128,17 @@ import {
   modelOptions,
   modelSupportsUltra,
   normalizeModeForModel,
+  persistManualExecutionPreference,
+  persistRoutingPreference,
   persistTheme,
+  readStoredManualExecutionPreference,
+  readStoredRoutingPreference,
+  resolveExecutionPreference,
   themeOptions,
+  tokenResearchRoutingProfile,
   type Effort,
   type ModelId,
+  type RoutingPreference,
   type RunMode,
   type ThemePreference
 } from "./workspace-preferences";
@@ -1091,14 +1099,17 @@ function AgentDialog({
 }
 
 export function App(): ReactElement {
+  const initialRoutingPreference = readStoredRoutingPreference();
+  const initialManualExecutionPreference = readStoredManualExecutionPreference();
   const [prompt, setPrompt] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("research");
   const [conversation, setConversation] = useState<ConversationViewState | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [model, setModel] = useState<ModelId>("gpt-5.6-sol");
-  const [effort, setEffort] = useState<Effort>("medium");
-  const [mode, setMode] = useState<RunMode>("standard");
+  const [model, setModel] = useState<ModelId>(initialRoutingPreference === "tokenresearch" ? tokenResearchRoutingProfile.coordinator.model : initialManualExecutionPreference.model);
+  const [effort, setEffort] = useState<Effort>(initialRoutingPreference === "tokenresearch" ? tokenResearchRoutingProfile.coordinator.effort : initialManualExecutionPreference.effort);
+  const [mode, setMode] = useState<RunMode>(initialRoutingPreference === "tokenresearch" ? tokenResearchRoutingProfile.coordinator.mode : initialManualExecutionPreference.mode);
+  const [routing, setRouting] = useState<RoutingPreference>(initialRoutingPreference);
   const [theme, setTheme] = useState<ThemePreference>(initialThemePreference);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>(loadRecentTasks);
@@ -1150,6 +1161,15 @@ export function App(): ReactElement {
   }, [theme]);
 
   useEffect(() => {
+    persistRoutingPreference(routing);
+  }, [routing]);
+
+  useEffect(() => {
+    if (routing !== "manual") return;
+    persistManualExecutionPreference({ model, effort, mode });
+  }, [effort, mode, model, routing]);
+
+  useEffect(() => {
     const activeRootRunId = window.localStorage.getItem(activeConversationStorageKey);
     if (!activeRootRunId) return;
     const task = recentTasks.find((item) => item.rootRunId === activeRootRunId);
@@ -1163,6 +1183,7 @@ export function App(): ReactElement {
   const visiblePrompt = latestRun?.visiblePrompt ?? "";
   const renderedEventCount = conversation?.runs.reduce((total, run) => total + run.events.length, 0) ?? 0;
   const hasExplicitContexts = selectedContexts.some((id) => id !== "workspace");
+  const executionPreference = resolveExecutionPreference(routing, model, effort, mode);
 
   const paletteItems = useMemo<ComposerPaletteItem[]>(() => {
     if (!paletteMode) return [];
@@ -1370,9 +1391,10 @@ export function App(): ReactElement {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: requestPrompt,
-          model,
-          mode,
-          effort: mode === "ultra" ? "max" : effort,
+          model: executionPreference.model,
+          mode: executionPreference.mode,
+          effort: executionPreference.effort,
+          ...(routing === "tokenresearch" ? { routing } : {}),
           clientRequestId,
           ...(continueFromRunId === undefined ? {} : { continueFromRunId })
         }),
@@ -1399,9 +1421,10 @@ export function App(): ReactElement {
         rootRunId,
         status: body.status ?? "queued",
         prompt: requestPrompt,
-        model,
-        mode,
-        effort: mode === "ultra" ? "max" : effort,
+        model: executionPreference.model,
+        mode: executionPreference.mode,
+        effort: executionPreference.effort,
+        ...(routing === "tokenresearch" ? { routing } : {}),
         createdAt: acceptedAt,
         updatedAt: acceptedAt,
         progress: 0,
@@ -1571,10 +1594,32 @@ export function App(): ReactElement {
   const runtimeLabel = connection === "open" ? "事件流已连接" : connection === "connecting" ? "正在连接事件流" : connection === "closed" ? "事件流已断开" : "等待新任务";
   const ThemeIcon = themeIcons[theme];
 
+  function selectRouting(value: string): void {
+    const nextRouting = value as RoutingPreference;
+    setRouting(nextRouting);
+    if (nextRouting === "tokenresearch") {
+      setModel(tokenResearchRoutingProfile.coordinator.model);
+      setEffort(tokenResearchRoutingProfile.coordinator.effort);
+      setMode(tokenResearchRoutingProfile.coordinator.mode);
+    } else if (routing === "tokenresearch") {
+      const manualPreference = readStoredManualExecutionPreference();
+      setModel(manualPreference.model);
+      setEffort(manualPreference.effort);
+      setMode(manualPreference.mode);
+    }
+  }
+
   function selectModel(value: string): void {
     const nextModel = value as ModelId;
+    setRouting("manual");
     setModel(nextModel);
-    setMode((currentMode) => normalizeModeForModel(nextModel, currentMode));
+    setMode((currentMode) => normalizeModeForModel(nextModel, routing === "tokenresearch" ? "standard" : currentMode));
+  }
+
+  function selectEffort(value: string): void {
+    setRouting("manual");
+    setEffort(value as Effort);
+    if (routing === "tokenresearch") setMode("standard");
   }
 
   function selectTheme(nextTheme: ThemePreference): void {
@@ -1584,6 +1629,7 @@ export function App(): ReactElement {
 
   function selectRunMode(value: string): void {
     const nextMode = value as RunMode;
+    setRouting("manual");
     setMode(nextMode);
     if (nextMode === "ultra") setEffort("max");
   }
@@ -1631,15 +1677,17 @@ export function App(): ReactElement {
           <span className={`connection connection-${connection}`} role="status" aria-live="polite"><span className="status-dot" />{connectionLabel}</span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild><button type="button" className="icon-control" aria-label="切换外观" title="切换外观"><ThemeIcon aria-hidden="true" /></button></DropdownMenuTrigger>
-            <DropdownMenuContent className="radix-menu theme-menu" align="end" sideOffset={8}>
-              <DropdownMenuLabel className="menu-caption">外观</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={theme} onValueChange={(value) => selectTheme(value as ThemePreference)}>
-                {themeOptions.map((option) => {
-                  const OptionIcon = themeIcons[option.value];
-                  return <DropdownMenuRadioItem className="radio-menu-item theme-menu-item" value={option.value} key={option.value}><OptionIcon aria-hidden="true" /><span><strong>{option.label}</strong><small>{option.description}</small></span>{theme === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>;
-                })}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
+            <DropdownMenuPortal>
+              <DropdownMenuContent className="radix-menu theme-menu" align="end" sideOffset={8}>
+                <DropdownMenuLabel className="menu-caption">外观</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={theme} onValueChange={(value) => selectTheme(value as ThemePreference)}>
+                  {themeOptions.map((option) => {
+                    const OptionIcon = themeIcons[option.value];
+                    return <DropdownMenuRadioItem className="radio-menu-item theme-menu-item" value={option.value} key={option.value}><OptionIcon aria-hidden="true" /><span><strong>{option.label}</strong><small>{option.description}</small></span>{theme === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>;
+                  })}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenuPortal>
           </DropdownMenu>
           <IconTooltip label="Agent 设置"><button type="button" className="icon-control" onClick={(event) => openWorkspaceDialog("agent", event.currentTarget)} aria-label="Agent 设置"><Settings aria-hidden="true" /></button></IconTooltip>
         </div>
@@ -1669,34 +1717,55 @@ export function App(): ReactElement {
             <div className="composer-left">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild><button ref={addMenuTriggerRef} type="button" className="icon-tool" aria-label="添加技能或上下文" title="添加技能或上下文"><Plus aria-hidden="true" /></button></DropdownMenuTrigger>
-                <DropdownMenuContent className="radix-menu add-menu" align="start" side="top" sideOffset={10}>
-                  <DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("knowledge", addMenuTriggerRef.current)}><Library aria-hidden="true" /><span><strong>添加上下文</strong><small>项目文件与调研材料</small></span></DropdownMenuItem>
-                  <DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("agent", addMenuTriggerRef.current)}><Layers3 aria-hidden="true" /><span><strong>使用技能</strong><small>选择专门的工作方法</small></span></DropdownMenuItem>
-                </DropdownMenuContent>
+                <DropdownMenuPortal>
+                  <DropdownMenuContent className="radix-menu add-menu" align="start" side="top" sideOffset={10}>
+                    <DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("knowledge", addMenuTriggerRef.current)}><Library aria-hidden="true" /><span><strong>添加上下文</strong><small>项目文件与调研材料</small></span></DropdownMenuItem>
+                    <DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("agent", addMenuTriggerRef.current)}><Layers3 aria-hidden="true" /><span><strong>使用技能</strong><small>选择专门的工作方法</small></span></DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenuPortal>
               </DropdownMenu>
 
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><button type="button" className={mode === "ultra" ? "model-trigger ultra-active" : "model-trigger"} aria-label={`模型 ${modelLabel(model)}，推理强度 ${effortLabel(effort)}${mode === "ultra" ? "，Ultra 模式" : ""}`}><span>{modelLabel(model)}</span><span>·</span><span>{effortLabel(effort)}</span>{mode === "ultra" ? <span className="ultra-trigger-badge"><Zap aria-hidden="true" />Ultra</span> : null}<ChevronDown aria-hidden="true" /></button></DropdownMenuTrigger>
-                <DropdownMenuContent className="radix-menu settings-menu model-picker" align="start" side="top" sideOffset={10}>
-                  <DropdownMenuRadioGroup value={model} onValueChange={selectModel}>
-                    <DropdownMenuLabel className="menu-caption">GPT-5.6</DropdownMenuLabel>
-                    {modelOptions.filter((option) => option.group === "gpt-5.6").map((option) => <DropdownMenuRadioItem className="radio-menu-item model-menu-item" value={option.value} key={option.value}><span className="model-orb" aria-hidden="true">{option.value.split("-").at(-1)?.slice(0, 1).toUpperCase()}</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}
+                <DropdownMenuTrigger asChild><button type="button" className={routing === "tokenresearch" ? "model-trigger routing-active" : mode === "ultra" ? "model-trigger ultra-active" : "model-trigger"} aria-label={routing === "tokenresearch" ? "TokenResearch 智能路由，Sol 主脑与 Luna Max 子 Agent" : `模型 ${modelLabel(model)}，推理强度 ${effortLabel(effort)}${mode === "ultra" ? "，Ultra 模式" : ""}`}>
+                  {routing === "tokenresearch" ? <><span>TokenResearch</span><span>·</span><span>Sol + Luna Max</span><span className="routing-trigger-badge"><BrainCircuit aria-hidden="true" />路由</span></> : <><span>{modelLabel(model)}</span><span>·</span><span>{effortLabel(effort)}</span>{mode === "ultra" ? <span className="ultra-trigger-badge"><Zap aria-hidden="true" />Ultra</span> : null}</>}
+                  <ChevronDown aria-hidden="true" />
+                </button></DropdownMenuTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuContent className="radix-menu settings-menu model-picker" align="start" side="top" sideOffset={10} collisionPadding={12}>
+                    <DropdownMenuLabel className="menu-caption settings-section-heading"><span>智能路由</span><small>默认开启</small></DropdownMenuLabel>
+                    <DropdownMenuRadioGroup className="routing-grid" value={routing} onValueChange={selectRouting}>
+                      <DropdownMenuRadioItem className="routing-menu-item" value="tokenresearch" onSelect={(event) => event.preventDefault()}>
+                        <span className="routing-icon"><BrainCircuit aria-hidden="true" /></span>
+                        <span><strong>TokenResearch</strong><small>{tokenResearchRoutingProfile.description}</small><code>Sol Ultra 主脑 / Luna Max 子 Agent</code></span>
+                        {routing === "tokenresearch" ? <Check aria-hidden="true" /> : null}
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem className="routing-menu-item routing-manual-item" value="manual" onSelect={(event) => event.preventDefault()}>
+                        <span className="routing-icon routing-icon-manual"><SlidersHorizontal aria-hidden="true" /></span>
+                        <span><strong>手动设置</strong><small>直接选择模型、推理强度和运行模式</small></span>
+                        {routing === "manual" ? <Check aria-hidden="true" /> : null}
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
                     <DropdownMenuSeparator className="menu-separator" />
-                    <DropdownMenuLabel className="menu-caption">本地设置</DropdownMenuLabel>
-                    {modelOptions.filter((option) => option.group === "local").map((option) => <DropdownMenuRadioItem className="radio-menu-item model-menu-item" value={option.value} key={option.value}><span className="model-orb model-orb-auto" aria-hidden="true">A</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator className="menu-separator" />
-                  <DropdownMenuLabel className="menu-caption settings-section-heading"><span>推理强度</span><small>{mode === "ultra" ? "Ultra 固定 Max" : effortLabel(effort)}</small></DropdownMenuLabel>
-                  <DropdownMenuRadioGroup className="effort-grid" value={effort} onValueChange={(value) => setEffort(value as Effort)}>{effortOptions.map((option) => <DropdownMenuRadioItem className="effort-menu-item" value={option.value} key={option.value} disabled={mode === "ultra"}><strong>{option.label}</strong><small>{option.description}</small></DropdownMenuRadioItem>)}</DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator className="menu-separator" />
-                  <DropdownMenuLabel className="menu-caption settings-section-heading"><span>运行模式</span><small>独立于推理强度</small></DropdownMenuLabel>
-                  <DropdownMenuRadioGroup className="mode-grid" value={mode} onValueChange={selectRunMode}>
-                    <DropdownMenuRadioItem className="mode-menu-item" value="standard"><span className="mode-icon"><User aria-hidden="true" /></span><span><strong>Standard</strong><small>单 Agent 执行</small></span>{mode === "standard" ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem className="mode-menu-item ultra-mode-item" value="ultra" disabled={!modelSupportsUltra(model)}><span className="mode-icon"><Zap aria-hidden="true" /></span><span><strong>Ultra</strong><small>{modelSupportsUltra(model) ? "多 Agent 并行探索" : model === "gpt-5.6-luna" ? "Luna 不支持；请选 Sol / Terra" : "仅支持 Sol / Terra"}</small></span>{mode === "ultra" ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator className="menu-separator" />
-                  <DropdownMenuItem className="menu-status" onSelect={(event) => event.preventDefault()}><HardDrive aria-hidden="true" /><span>工作区可写</span><ShieldCheck aria-hidden="true" /></DropdownMenuItem>
-                </DropdownMenuContent>
+                    <DropdownMenuLabel className="menu-caption">GPT-5.6</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup value={model} onValueChange={selectModel}>
+                      {modelOptions.filter((option) => option.group === "gpt-5.6").map((option) => <DropdownMenuRadioItem className="radio-menu-item model-menu-item" value={option.value} key={option.value} onSelect={(event) => event.preventDefault()}><span className="model-orb" aria-hidden="true">{option.value.split("-").at(-1)?.slice(0, 1).toUpperCase()}</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{routing === "manual" && model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}
+                      <DropdownMenuSeparator className="menu-separator" />
+                      <DropdownMenuLabel className="menu-caption">本地设置</DropdownMenuLabel>
+                      {modelOptions.filter((option) => option.group === "local").map((option) => <DropdownMenuRadioItem className="radio-menu-item model-menu-item" value={option.value} key={option.value} onSelect={(event) => event.preventDefault()}><span className="model-orb model-orb-auto" aria-hidden="true">A</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{routing === "manual" && model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator className="menu-separator" />
+                    <DropdownMenuLabel className="menu-caption settings-section-heading"><span>推理强度</span><small>{routing === "tokenresearch" ? "由路由固定 Max" : mode === "ultra" ? "Ultra 固定 Max" : effortLabel(effort)}</small></DropdownMenuLabel>
+                    <DropdownMenuRadioGroup className="effort-grid" value={effort} onValueChange={selectEffort}>{effortOptions.map((option) => <DropdownMenuRadioItem className="effort-menu-item" value={option.value} key={option.value} disabled={mode === "ultra" && routing === "manual"} onSelect={(event) => event.preventDefault()}><strong>{option.label}</strong><small>{option.description}</small></DropdownMenuRadioItem>)}</DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator className="menu-separator" />
+                    <DropdownMenuLabel className="menu-caption settings-section-heading"><span>运行模式</span><small>独立于推理强度</small></DropdownMenuLabel>
+                    <DropdownMenuRadioGroup className="mode-grid" value={mode} onValueChange={selectRunMode}>
+                      <DropdownMenuRadioItem className="mode-menu-item" value="standard" onSelect={(event) => event.preventDefault()}><span className="mode-icon"><User aria-hidden="true" /></span><span><strong>Standard</strong><small>单 Agent 执行</small></span>{routing === "manual" && mode === "standard" ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem className="mode-menu-item ultra-mode-item" value="ultra" disabled={!modelSupportsUltra(model)} onSelect={(event) => event.preventDefault()}><span className="mode-icon"><Zap aria-hidden="true" /></span><span><strong>Ultra</strong><small>{modelSupportsUltra(model) ? "多 Agent 并行探索" : model === "gpt-5.6-luna" ? "Luna 不支持；请选 Sol / Terra" : "仅支持 Sol / Terra"}</small></span>{routing === "manual" && mode === "ultra" ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator className="menu-separator" />
+                    <DropdownMenuItem className="menu-status" onSelect={(event) => event.preventDefault()}><HardDrive aria-hidden="true" /><span>工作区可写</span><ShieldCheck aria-hidden="true" /></DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenuPortal>
               </DropdownMenu>
             </div>
             <div className="composer-right">

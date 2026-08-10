@@ -13,11 +13,14 @@ export type RunStatus =
 export const RUN_MODELS = ["auto", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const;
 export const RUN_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const ULTRA_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra"] as const;
+/** Explicit server-side routing strategies. Add new ids only with a defined policy. */
+export const RUN_ROUTING_STRATEGIES = ["tokenresearch"] as const;
 
 export type RunModel = typeof RUN_MODELS[number];
 export type UltraRunModel = typeof ULTRA_MODELS[number];
 export type RunMode = "standard" | "ultra";
 export type RunEffort = typeof RUN_EFFORTS[number];
+export type RunRoutingStrategyId = typeof RUN_ROUTING_STRATEGIES[number];
 
 type LegacyRunMode = "cluster";
 type LegacyRunEffort = "fast" | "balanced" | "deep";
@@ -35,6 +38,8 @@ export interface RunRequest {
   model?: RunModel | (string & {});
   mode?: RunMode;
   effort?: RunEffort;
+  /** Optional server-side routing policy. Omitted requests retain legacy behavior. */
+  routing?: RunRoutingStrategyId;
   workspaceId?: string;
   attachments?: AttachmentRef[];
   clientRequestId?: string;
@@ -49,6 +54,8 @@ export interface RunSnapshot {
   model: string;
   mode: RunMode;
   effort: RunEffort;
+  /** The normalized routing policy used for this run, when selected. */
+  routing?: RunRoutingStrategyId;
   createdAt: string;
   updatedAt: string;
   progress: number;
@@ -215,6 +222,19 @@ export function validateRunRequest(value: unknown): RunRequest {
     request.mode = "ultra";
     request.effort = "max";
   }
+  const routing = normalizeRunRouting(candidate.routing);
+  if (routing) {
+    request.routing = routing;
+    // TokenResearch is a coordinator policy, not a provider capability. Keep
+    // the coordinator deterministic and use Codex Ultra's orchestration path;
+    // its prompt then guides Luna delegation without pretending to expose a
+    // provider-side scheduler API.
+    if (routing === "tokenresearch") {
+      request.model = "gpt-5.6-sol";
+      request.mode = "ultra";
+      request.effort = "max";
+    }
+  }
   if (request.mode === "ultra") request.effort = "max";
   if (request.mode === "ultra" && !supportsUltraMode(request.model)) {
     if (request.model === "gpt-5.6-luna") {
@@ -238,6 +258,17 @@ export function validateRunRequest(value: unknown): RunRequest {
     request.attachments = candidate.attachments.filter(isAttachmentRef);
   }
   return request;
+}
+
+function normalizeRunRouting(value: unknown): RunRoutingStrategyId | undefined {
+  if (value === undefined) return undefined;
+  const id = typeof value === "string"
+    ? value.trim()
+    : value && typeof value === "object" && typeof (value as Record<string, unknown>).id === "string"
+      ? ((value as Record<string, unknown>).id as string).trim()
+      : "";
+  if (id === "tokenresearch") return id;
+  throw new Error("routing.id must be tokenresearch");
 }
 
 function isAttachmentRef(value: unknown): value is AttachmentRef {
@@ -278,6 +309,7 @@ export function createInitialSnapshot(runId: string, request: RunRequest, now = 
     updatedAt: now,
     progress: 0
   };
+  if (request.routing) snapshot.routing = request.routing;
   if (request.workspaceId) snapshot.workspaceId = request.workspaceId;
   return snapshot;
 }

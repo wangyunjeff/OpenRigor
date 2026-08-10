@@ -112,3 +112,30 @@ test("passes native model/effort values and treats Ultra as a guarded Codex orch
     await launcher.cleanup();
   }
 });
+
+test("turns TokenResearch routing into coordinator guidance without provider scheduler claims", async () => {
+  const launcher = await createFakeCodexLauncher();
+  const client = new CodexAppServerClient({ command: launcher.command, requestTimeoutMs: 2_000, turnTimeoutMs: 2_000 });
+  try {
+    const deltas: string[] = [];
+    const result = await client.run({
+      prompt: "route-me",
+      cwd: dirname(fixture),
+      model: "gpt-5.6-sol",
+      effort: "ultra",
+      routing: "tokenresearch",
+      ephemeral: true
+    }, {
+      onNotification: (notification) => {
+        if (notification.method !== "item/agentMessage/delta") return;
+        const params = notification.params && typeof notification.params === "object" ? notification.params as Record<string, unknown> : null;
+        if (typeof params?.delta === "string") deltas.push(params.delta);
+      }
+    });
+    assert.equal(result.status, "completed");
+    assert.ok(deltas.join("").includes("luna-worker profile (gpt-5.6-luna, max reasoning effort)"));
+  } finally {
+    await client.close();
+    await launcher.cleanup();
+  }
+});

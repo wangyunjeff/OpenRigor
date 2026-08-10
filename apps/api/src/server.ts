@@ -558,6 +558,7 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
     model: record.snapshot.model,
     mode: record.snapshot.mode,
     effort: record.snapshot.effort,
+    ...(record.snapshot.routing === undefined ? {} : { routing: record.snapshot.routing }),
     ...(record.snapshot.workspaceId === undefined ? {} : { workspaceId: record.snapshot.workspaceId })
   };
   const result = await client.run(
@@ -567,6 +568,7 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
       ...(record.codexThreadId === undefined ? {} : { threadId: record.codexThreadId }),
       ...(request.model === undefined ? {} : { model: request.model }),
       effort: codexEffort(request),
+      ...(request.routing === undefined ? {} : { routing: request.routing }),
       sandbox: codexSandbox,
       approvalPolicy: codexApprovalPolicy,
       // A root run creates one thread. Follow-up runs pass that thread id and
@@ -634,6 +636,7 @@ function runRequestFingerprint(request: RunRequest): string {
     model: request.model ?? "auto",
     mode: request.mode ?? "standard",
     effort: request.effort ?? "medium",
+    routing: request.routing ?? null,
     workspaceId: request.workspaceId ?? null,
     attachments: (request.attachments ?? []).map((attachment) => ({
       fileId: attachment.fileId,
