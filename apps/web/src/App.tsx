@@ -478,7 +478,7 @@ function ExampleCard({ example, onOpen }: { example: ExampleTask; onOpen: (examp
     aria-label={`预览案例：${example.title}`}
   >
     <span className="example-body"><span className="example-kicker"><Icon aria-hidden="true" />工作流</span><strong>{example.title}</strong><span>{example.description}</span></span>
-    <ExamplePreviewArt visual={example.visual ?? "research"} />
+    <ExamplePreviewArt visual={example.visual ?? "research"} generated />
   </button>;
 }
 
