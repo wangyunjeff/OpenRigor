@@ -110,6 +110,13 @@ import {
   type ConversationViewState,
   type ToolProjection
 } from "./conversation";
+import {
+  formatToolDuration,
+  isActivelyWorkingStatus,
+  presentRunActivity,
+  toolElapsedMs,
+  type RunActivityPresentation
+} from "./run-presentation";
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8787";
 
@@ -296,14 +303,6 @@ function compactId(value: string): string {
   return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-5)}` : value;
 }
 
-function formatDuration(firstAt: string, lastAt: string): string | null {
-  const duration = new Date(lastAt).getTime() - new Date(firstAt).getTime();
-  if (duration <= 0) return null;
-  if (duration < 1000) return `${duration}ms`;
-  if (duration < 60_000) return `${(duration / 1000).toFixed(duration < 10_000 ? 1 : 0)}s`;
-  return `${Math.floor(duration / 60_000)}m ${Math.round((duration % 60_000) / 1000)}s`;
-}
-
 function greeting(): string {
   const hour = new Date().getHours();
   if (hour < 11) return "早上好，Jeff";
@@ -327,6 +326,19 @@ function statusLabel(status: RunSnapshot["status"]): string {
 
 function isTerminalStatus(status: RunSnapshot["status"]): boolean {
   return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function useLiveNow(enabled: boolean, resetKey: string): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    if (!enabled) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [enabled, resetKey]);
+
+  return nowMs;
 }
 
 function phaseLabel(phase: ToolEvent["tool"]["phase"]): string {
@@ -442,18 +454,35 @@ function IconTooltip({ label, children }: { label: string; children: ReactElemen
   </TooltipRoot>;
 }
 
-function ToolRow({ projection, output }: { projection: ToolProjection; output: string | undefined }): ReactElement {
+function RunActivityIndicator({ view, status }: { view: RunActivityPresentation; status: RunSnapshot["status"] }): ReactElement {
+  return <div className={`run-activity${view.animated ? " is-animated" : ""}${view.stale ? " is-stale" : ""}`} data-status={status}>
+    <span className="run-activity-orb" aria-hidden="true">
+      {Array.from({ length: 9 }, (_, index) => <i key={index} />)}
+    </span>
+    <span className="run-activity-copy">
+      <strong role="status" aria-live="polite">{view.headline}</strong>
+      <small>{view.detail}</small>
+    </span>
+    <span className="run-activity-meta" aria-hidden="true"><span>已用时 {view.elapsed}</span><i>·</i><span>{view.lastUpdate}</span></span>
+  </div>;
+}
+
+function ToolRow({ projection, output, nowMs, active }: { projection: ToolProjection; output: string | undefined; nowMs: number; active: boolean }): ReactElement {
   const phase = projection.event.tool.phase;
-  const [open, setOpen] = useState(phase === "running" || phase === "failed");
+  const [open, setOpen] = useState(phase === "failed" || (active && (phase === "requested" || phase === "running")));
   const Icon = toolIcon(projection.event.tool.name);
-  const duration = formatDuration(projection.firstAt, projection.lastAt);
+  const liveDuration = active && (phase === "requested" || phase === "running");
+  const duration = phase === "requested" && !liveDuration
+    ? null
+    : formatToolDuration(toolElapsedMs(projection.firstAt, projection.lastAt, liveDuration, nowMs));
 
   useEffect(() => {
-    if (phase === "running" || phase === "failed") setOpen(true);
-    if (phase === "succeeded") setOpen(false);
-  }, [phase]);
+    if (phase === "failed") setOpen(true);
+    else if (phase === "succeeded") setOpen(false);
+    else setOpen(active);
+  }, [active, phase]);
 
-  return <Collapsible className="activity-row" open={open} onOpenChange={setOpen}>
+  return <Collapsible className={`activity-row${active ? " is-live" : ""}`} open={open} onOpenChange={setOpen}>
     <CollapsibleTrigger asChild>
       <button type="button" className="activity-trigger">
         <span className={`activity-state phase-${phase}`}><Icon aria-hidden="true" /></span>
@@ -472,15 +501,26 @@ function ToolRow({ projection, output }: { projection: ToolProjection; output: s
 function ConversationRunTurn({
   run,
   copied,
-  onCopy
+  onCopy,
+  connection
 }: {
   run: ConversationRunView;
   copied: boolean;
   onCopy: (runId: string, answer: string) => void;
+  connection: ConnectionState;
 }): ReactElement {
   const { answer, reasoning, toolOutput, tools, diffs, files } = useMemo(() => projectRunEvents(run.events), [run.events]);
   const snapshot = run.snapshot;
   const isRunning = !isTerminalStatus(snapshot.status);
+  const isWorking = isActivelyWorkingStatus(snapshot.status);
+  const nowMs = useLiveNow(isRunning, snapshot.runId);
+  const latestEventAt = run.events.at(-1)?.ts ?? snapshot.updatedAt;
+  const activity = presentRunActivity(snapshot, latestEventAt, nowMs);
+  const visibleActivity: RunActivityPresentation = connection === "open"
+    ? activity
+    : connection === "connecting"
+      ? { ...activity, animated: true, stale: false, headline: "正在恢复实时状态", detail: "正在重新连接事件流" }
+      : { ...activity, animated: false, stale: false, headline: "实时状态未连接", detail: "任务可能仍在后台运行" };
   const [reasoningOpen, setReasoningOpen] = useState(isRunning);
   const [executionOpen, setExecutionOpen] = useState(isRunning);
   const activityCount = tools.length + files.length + diffs.length + (reasoning ? 1 : 0);
@@ -499,23 +539,23 @@ function ConversationRunTurn({
     <article className="assistant-turn">
       <div className="assistant-heading"><span className="assistant-mark"><Command aria-hidden="true" /></span><span><strong>OpenRigor</strong><small className={`run-status status-${snapshot.status}`}><span />{statusLabel(snapshot.status)}</small></span><code>{compactId(snapshot.runId)}</code></div>
 
-      {!answer && isRunning ? <div className="thinking-line"><span className="thinking-mark"><span /><span /><span /></span><span>{snapshot.currentStep ?? "正在分析任务"}</span></div> : null}
+      {isRunning ? <RunActivityIndicator view={visibleActivity} status={snapshot.status} /> : null}
 
       {activityCount ? <Collapsible className="execution-group" open={executionOpen} onOpenChange={setExecutionOpen}>
-        <CollapsibleTrigger asChild><button type="button" className="execution-summary"><Activity aria-hidden="true" /><span>{isRunning ? `正在执行 · ${activityCount} 个步骤` : `执行了 ${activityCount} 个步骤`}</span><small>{snapshot.progress}%</small><ChevronDown aria-hidden="true" /></button></CollapsibleTrigger>
+        <CollapsibleTrigger asChild><button type="button" className="execution-summary"><Activity aria-hidden="true" /><span>{isWorking ? `正在执行 · ${activityCount} 个步骤` : snapshot.status === "waiting_user" ? `等待继续 · ${activityCount} 个步骤` : `执行了 ${activityCount} 个步骤`}</span><small>{snapshot.progress}%</small><ChevronDown aria-hidden="true" /></button></CollapsibleTrigger>
         <CollapsibleContent className="execution-content">
           {reasoning ? <Collapsible className="activity-row reasoning-row" open={reasoningOpen} onOpenChange={setReasoningOpen}>
-            <CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state reasoning-state"><BrainCircuit aria-hidden="true" /></span><span className="activity-copy"><strong>深度思考</strong><small>{snapshot.currentStep ?? "分析任务与工作区"}</small></span><span className="activity-phase">{isRunning ? "进行中" : "完成"}</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger>
+            <CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state reasoning-state"><BrainCircuit aria-hidden="true" /></span><span className="activity-copy"><strong>深度思考</strong><small>{snapshot.currentStep ?? "分析任务与工作区"}</small></span><span className="activity-phase">{isWorking ? "进行中" : snapshot.status === "waiting_user" ? "等待" : "完成"}</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger>
             <CollapsibleContent className="reasoning-copy">{reasoning}</CollapsibleContent>
           </Collapsible> : null}
-          {tools.map((projection) => <ToolRow key={projection.event.tool.callId} projection={projection} output={projection.event.tool.outputSummary ?? toolOutput.get(projection.event.tool.callId)} />)}
+          {tools.map((projection) => <ToolRow key={projection.event.tool.callId} projection={projection} output={projection.event.tool.outputSummary ?? toolOutput.get(projection.event.tool.callId)} nowMs={nowMs} active={isWorking && connection === "open"} />)}
           {files.map((event) => <div className="activity-row artifact-row" key={event.eventId}><span className="activity-state file-state"><FileCode2 aria-hidden="true" /></span><span className="activity-copy"><strong>生成文件</strong><small>{event.file.name}</small></span><span className="activity-phase">修订 {event.file.revision}</span></div>)}
           {diffs.map((event) => <Collapsible className="activity-row" key={event.eventId}><CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state diff-state"><GitCompare aria-hidden="true" /></span><span className="activity-copy"><strong>文件变更</strong><small>{event.part.partId.replace("diff:", "")}</small></span><span className="activity-phase">查看差异</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger><CollapsibleContent className="activity-output"><pre>{event.part.text}</pre></CollapsibleContent></Collapsible>)}
         </CollapsibleContent>
       </Collapsible> : null}
 
       {answer ? <div className="answer-block"><MarkdownText text={answer} /><div className="answer-actions"><button type="button" onClick={() => onCopy(run.runId, answer)}><Copy aria-hidden="true" />{copied ? "已复制" : "复制回答"}</button></div></div> : null}
-      {snapshot.status === "completed" ? <div className="completion-line"><span><Check aria-hidden="true" /></span><strong>任务完成</strong><small>{formatTime(snapshot.updatedAt)}</small></div> : null}
+      {snapshot.status === "completed" ? <div className="completion-line"><span><Check aria-hidden="true" /></span><strong>任务完成</strong><small>用时 {activity.elapsed} · {formatTime(snapshot.updatedAt)}</small></div> : null}
     </article>
   </section>;
 }
@@ -1086,9 +1126,9 @@ export function App(): ReactElement {
   }
 
   const activeExamples = examples[activeTab];
-  const connectionLabel = connection === "open" ? "实时" : connection === "connecting" ? "连接中" : connection === "closed" ? "断开" : "本机就绪";
+  const connectionLabel = connection === "open" ? "实时" : connection === "connecting" ? "连接中" : connection === "closed" ? "断开" : "空闲";
   const visibleContextCount = selectedContexts.filter((id) => id !== "workspace").length;
-  const runtimeLabel = connection === "open" ? "事件流已连接" : connection === "connecting" ? "正在连接事件流" : connection === "closed" ? "事件流已断开" : "本机执行器";
+  const runtimeLabel = connection === "open" ? "事件流已连接" : connection === "connecting" ? "正在连接事件流" : connection === "closed" ? "事件流已断开" : "等待新任务";
 
   return <TooltipProvider><div className="app-shell">
     {sidebarOpen ? <button type="button" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="关闭导航" /> : null}
@@ -1160,7 +1200,7 @@ export function App(): ReactElement {
         </section> : <section className="conversation-view">
           <div className="conversation-scroll" ref={conversationScroll} onScroll={handleConversationScroll}>
             <div className="conversation-column">
-              {conversation.runs.map((run) => <ConversationRunTurn key={run.runId} run={run} copied={copiedRunId === run.runId} onCopy={(runId, answer) => { void copyAnswer(runId, answer); }} />)}
+              {conversation.runs.map((run) => <ConversationRunTurn key={run.runId} run={run} copied={copiedRunId === run.runId} onCopy={(runId, answer) => { void copyAnswer(runId, answer); }} connection={connection} />)}
             </div>
           </div>
           {!followLatest ? <button type="button" className="jump-latest" onClick={() => { setFollowLatest(true); conversationScroll.current?.scrollTo({ top: conversationScroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown aria-hidden="true" />跳到最新</button> : null}
