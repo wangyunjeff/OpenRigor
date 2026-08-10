@@ -140,8 +140,8 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 .category-tab:hover { color: var(--text); }
 .category-tab.selected { background: #303030; color: var(--text); box-shadow: 0 2px 7px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255,255,255,.05); }
 .example-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; margin-top: 13px; }
-.example-card { min-height: 116px; display: grid; grid-template-columns: minmax(0, 1fr) 112px; align-items: stretch; gap: 13px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255, 255, 255, 0.052); color: var(--text); padding: 14px 14px 14px 16px; text-align: left; box-shadow: var(--shadow-card); transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease; }
-.example-card:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.085); box-shadow: 0 18px 38px rgba(0, 0, 0, .22), 0 1px 0 rgba(255,255,255,.05) inset; transform: translateY(-1px); }
+.example-card { min-height: 116px; display: grid; grid-template-columns: minmax(0, 1fr) 112px; align-items: stretch; gap: 13px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255, 255, 255, 0.052); color: var(--text); padding: 14px 14px 14px 16px; text-align: left; box-shadow: var(--shadow-card); transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+.example-card:hover, .example-card:focus-visible { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.085); box-shadow: 0 18px 38px rgba(0, 0, 0, .22), 0 1px 0 rgba(255,255,255,.05) inset; }
 .example-body { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
 .example-kicker { display: inline-flex; align-items: center; gap: 5px; color: var(--faint); font: 9px var(--mono); text-transform: uppercase; letter-spacing: .02em; }
 .example-kicker svg { width: 12px; height: 12px; color: var(--accent); }
@@ -296,10 +296,11 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 .stop-button { background: var(--danger); color: #2a1515; }
 .send-button svg, .stop-button svg { width: 15px; height: 15px; }
 
-.composer-command-menu { position: absolute; z-index: 70; left: 0; right: 0; bottom: calc(100% + 11px); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 15px; background: rgba(38, 38, 38, .97); box-shadow: 0 26px 68px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05) inset; padding: 7px; animation: menu-in 130ms ease-out; }
+.composer-command-menu { position: absolute; z-index: 70; left: 0; right: 0; bottom: calc(100% + 11px); max-height: min(520px, calc(100vh - 130px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 15px; background: rgba(38, 38, 38, .97); box-shadow: 0 26px 68px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05) inset; padding: 7px; }
 .composer-command-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 8px 6px; color: var(--faint); font: 10px var(--mono); }
 .composer-command-header > span { display: inline-flex; align-items: center; gap: 6px; }.composer-command-header svg { width: 13px; height: 13px; color: var(--accent); }
 .composer-command-header > kbd, .composer-command-footer kbd, .composer-command-check kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 18px; border: 1px solid var(--line); border-radius: 4px; background: rgba(255,255,255,.045); color: var(--muted); padding: 0 5px; font: 9px var(--mono); }
+.composer-command-list { min-height: 0; overflow-y: auto; }
 .composer-command-item { width: 100%; min-height: 53px; display: flex; align-items: center; gap: 9px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text-soft); padding: 7px 8px; text-align: left; }
 .composer-command-item:hover, .composer-command-item.highlighted { border-color: var(--line); background: rgba(255,255,255,.065); }
 .composer-command-icon { width: 28px; height: 28px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(142,182,217,.2); border-radius: 7px; background: rgba(142,182,217,.08); color: var(--blue); }.composer-command-icon svg { width: 14px; height: 14px; }
@@ -331,12 +332,10 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 .radix-tooltip { z-index: 120; border: 1px solid var(--line-strong); border-radius: 6px; background: #303030; color: var(--text); padding: 6px 8px; font-size: 10px; box-shadow: var(--shadow-float); }
 
 /* Dialogs */
-.dialog-overlay { position: fixed; z-index: 80; inset: 0; background: rgba(0, 0, 0, 0.58); backdrop-filter: blur(5px); animation: overlay-in 150ms ease-out; }
-.dialog-content { position: fixed; z-index: 81; left: 50%; top: 50%; width: min(560px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 32px)); transform: translate(-50%, -50%); overflow: auto; border: 1px solid var(--line-strong); border-radius: 16px; background: #292929; color: var(--text); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255,255,255,.04) inset; padding: 20px; animation: dialog-in 170ms ease-out; }
+.dialog-overlay { position: fixed; z-index: 80; inset: 0; background: rgba(0, 0, 0, 0.58); backdrop-filter: blur(5px); }
+.dialog-content { position: fixed; z-index: 81; left: 50%; top: 50%; width: min(560px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 32px)); transform: translate(-50%, -50%); overflow: auto; border: 1px solid var(--line-strong); border-radius: 16px; background: #292929; color: var(--text); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255,255,255,.04) inset; padding: 20px; }
 .example-dialog { width: min(576px, calc(100vw - 32px)); max-height: min(700px, calc(100vh - 32px)); overflow: hidden; border-radius: 22px; background: #272727; padding: 0; }
 .agent-dialog { width: min(860px, calc(100vw - 32px)); height: min(720px, calc(100vh - 32px)); min-height: min(560px, calc(100vh - 32px)); display: grid; grid-template-columns: 190px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0; padding: 0; overflow: hidden; }
-@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes dialog-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.985); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 .dialog-header { align-items: flex-start; gap: 11px; }
 .dialog-icon { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(228, 162, 116, .34); border-radius: 8px; background: rgba(228, 162, 116, .1); color: var(--accent); }
 .dialog-icon svg { width: 17px; height: 17px; }

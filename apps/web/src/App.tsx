@@ -398,6 +398,152 @@ function ExamplePreviewArt({ visual }: { visual: ExampleVisual }): ReactElement 
   return <span className="example-art art-brief" aria-hidden="true"><span className="brief-ring" /><span className="brief-lines"><i /><i /><i /><i /></span><span className="brief-chip" /></span>;
 }
 
+function ExampleCard({ example, onOpen }: { example: ExampleTask; onOpen: (example: ExampleTask, trigger: HTMLButtonElement) => void }): ReactElement {
+  const cardRef = useRef<HTMLButtonElement>(null);
+  const { contextSafe } = useGSAP({ scope: cardRef });
+
+  const animateHover = contextSafe(() => {
+    const root = cardRef.current;
+    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const art = root.querySelector<HTMLElement>(".example-art");
+    const layers = Array.from(root.querySelectorAll<HTMLElement>(".example-art > *"));
+    gsap.killTweensOf([root, art, ...layers]);
+    gsap.to(root, { y: -1, duration: 0.16, ease: "power2.out", overwrite: "auto" });
+    gsap.to(".example-art", { y: -2, scale: 1.012, duration: 0.2, ease: "power2.out", overwrite: "auto" });
+    gsap.fromTo(".example-art > *", { autoAlpha: 0.58, y: 3 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.018, ease: "power2.out", overwrite: "auto", clearProps: "transform,opacity,visibility" });
+  });
+
+  const animatePointerHover = contextSafe(() => {
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    animateHover();
+  });
+
+  const resetHover = contextSafe(() => {
+    const root = cardRef.current;
+    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const art = root.querySelector<HTMLElement>(".example-art");
+    const layers = Array.from(root.querySelectorAll<HTMLElement>(".example-art > *"));
+    gsap.killTweensOf([root, art, ...layers]);
+    gsap.set(layers, { clearProps: "transform,opacity,visibility" });
+    gsap.to(root, { y: 0, duration: 0.26, ease: "power3.out", overwrite: "auto", clearProps: "transform" });
+    gsap.to(".example-art", { y: 0, scale: 1, duration: 0.28, ease: "power3.out", overwrite: "auto", clearProps: "transform" });
+  });
+
+  const resetPointerHover = contextSafe(() => {
+    const root = cardRef.current;
+    if (!root || !window.matchMedia("(hover: hover) and (pointer: fine)").matches || root.matches(":focus-visible")) return;
+    resetHover();
+  });
+
+  const pressCard = contextSafe(() => {
+    const root = cardRef.current;
+    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.to(root, { scale: 0.996, duration: 0.09, ease: "power1.out", overwrite: "auto" });
+  });
+
+  const releaseCard = contextSafe(() => {
+    const root = cardRef.current;
+    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.to(root, { scale: 1, duration: 0.16, ease: "power2.out", overwrite: "auto" });
+  });
+
+  const Icon = example.icon;
+  return <button
+    ref={cardRef}
+    type="button"
+    className="example-card"
+    onClick={(event) => onOpen(example, event.currentTarget)}
+    onPointerEnter={animatePointerHover}
+    onPointerLeave={resetPointerHover}
+    onPointerDown={pressCard}
+    onPointerUp={releaseCard}
+    onPointerCancel={releaseCard}
+    onFocus={animateHover}
+    onBlur={resetHover}
+    aria-label={`预览案例：${example.title}`}
+  >
+    <span className="example-body"><span className="example-kicker"><Icon aria-hidden="true" />工作流</span><strong>{example.title}</strong><span>{example.description}</span></span>
+    <ExamplePreviewArt visual={example.visual ?? "research"} />
+  </button>;
+}
+
+function LaunchView({ activeTab, onTabChange, onOpenExample }: { activeTab: TabId; onTabChange: (tab: TabId) => void; onOpenExample: (example: ExampleTask, trigger: HTMLButtonElement) => void }): ReactElement {
+  const launchRef = useRef<HTMLElement>(null);
+  const previousActiveTab = useRef(activeTab);
+  const activeExamples = examples[activeTab];
+
+  useGSAP(() => {
+    const root = launchRef.current;
+    if (!root) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.timeline({ defaults: { ease: "power2.out" } })
+        .fromTo(".launch-inner h1", { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.36, ease: "power3.out", clearProps: "transform,opacity,visibility" })
+        .fromTo(".workspace-context", { autoAlpha: 0, y: 5, scale: 0.98 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.08")
+        .fromTo(".category-tabs", { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.05")
+        .fromTo(".example-card", { autoAlpha: 0, y: 9, scale: 0.992 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.28, stagger: 0.045, clearProps: "transform,opacity,visibility" }, "<0.04");
+    }, root);
+    return () => media.revert();
+  }, { scope: launchRef });
+
+  useGSAP(() => {
+    const root = launchRef.current;
+    if (!root) return;
+    if (previousActiveTab.current === activeTab) return;
+    previousActiveTab.current = activeTab;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(".category-tab.selected", { scale: 0.96 }, { scale: 1, duration: 0.2, ease: "power2.out", clearProps: "transform" });
+      gsap.fromTo(".example-card", { autoAlpha: 0, y: 8, scale: 0.994 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.26, stagger: 0.035, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+    }, root);
+    return () => media.revert();
+  }, { scope: launchRef, dependencies: [activeTab], revertOnUpdate: true });
+
+  return <section ref={launchRef} className="launch-view">
+    <div className="launch-inner">
+      <h1>{greeting()}</h1>
+      <div className="workspace-context"><Folder aria-hidden="true" /><span>OpenRigor</span><small>main</small></div>
+      <div className="category-tabs" role="tablist" aria-label="任务分类">{tabs.map((tab, index) => <button id={`task-tab-${tab.id}`} key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls="task-examples" tabIndex={activeTab === tab.id ? 0 : -1} className={activeTab === tab.id ? "category-tab selected" : "category-tab"} onClick={() => onTabChange(tab.id)} onKeyDown={(event) => {
+        if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+        event.preventDefault();
+        const offset = event.key === "ArrowRight" ? 1 : -1;
+        const next = tabs[(index + offset + tabs.length) % tabs.length];
+        if (!next) return;
+        onTabChange(next.id);
+        window.setTimeout(() => document.getElementById(`task-tab-${next.id}`)?.focus(), 0);
+      }}>{tab.label}</button>)}</div>
+      <div id="task-examples" className="example-grid" role="tabpanel" tabIndex={0} aria-labelledby={`task-tab-${activeTab}`}>{activeExamples.map((example) => <ExampleCard key={example.title} example={example} onOpen={onOpenExample} />)}</div>
+    </div>
+  </section>;
+}
+
+function ComposerChip({ icon: Icon, label, onRemove }: { icon: LucideIcon; label: string; onRemove: () => void }): ReactElement {
+  const chipRef = useRef<HTMLButtonElement>(null);
+  useGSAP(() => {
+    const root = chipRef.current;
+    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.fromTo(root, { autoAlpha: 0, y: 4, scale: 0.96 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.18, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+  }, { scope: chipRef });
+  return <button ref={chipRef} type="button" onClick={onRemove}><Icon aria-hidden="true" />{label}<X aria-hidden="true" /></button>;
+}
+
+function useDialogEntrance(open: boolean, rootRef: { current: HTMLDivElement | null }, selector: string, key = ""): void {
+  useGSAP(() => {
+    const root = rootRef.current;
+    if (!root || !open) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      const overlay = root.parentElement?.querySelector<HTMLElement>(".dialog-overlay");
+      const timeline = gsap.timeline({ defaults: { ease: "power2.out" } });
+      if (overlay) timeline.fromTo(overlay, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, 0);
+      timeline
+        .fromTo(root, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.16, clearProps: "opacity,visibility" }, 0)
+        .fromTo(selector, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.16, stagger: 0.025, clearProps: "transform,opacity,visibility" }, 0.03);
+    }, root);
+    return () => media.revert();
+  }, { scope: rootRef, dependencies: [open, key], revertOnUpdate: true });
+}
+
 interface ComposerPaletteItem {
   id: string;
   label: string;
@@ -422,27 +568,46 @@ function ComposerPalette({
   selected: string[];
   onSelect: (item: ComposerPaletteItem) => void;
 }): ReactElement | null {
+  const paletteRef = useRef<HTMLDivElement>(null);
+  useGSAP(() => {
+    const root = paletteRef.current;
+    if (!root || !open || !mode) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.timeline({ defaults: { ease: "power2.out" } })
+        .fromTo(root, { autoAlpha: 0, y: 7, scale: 0.992 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.16, clearProps: "transform,opacity,visibility" })
+        .fromTo(".composer-command-header, .composer-command-item, .composer-command-footer", { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.13, stagger: 0.022, clearProps: "transform,opacity,visibility" }, "<0.02");
+    }, root);
+    return () => media.revert();
+  }, { scope: paletteRef, dependencies: [open, mode], revertOnUpdate: true });
+  useEffect(() => {
+    if (!open) return;
+    paletteRef.current?.querySelector<HTMLElement>(".composer-command-item.highlighted")?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, items.length, open]);
+
   if (!open || !mode) return null;
   const HeaderIcon = mode === "skill" ? Layers3 : AtSign;
-  return <div className="composer-command-menu" role="listbox" aria-label={mode === "skill" ? "选择技能" : "选择上下文"}>
+  return <div ref={paletteRef} className="composer-command-menu" role="listbox" aria-label={mode === "skill" ? "选择技能" : "选择上下文"}>
     <div className="composer-command-header"><span><HeaderIcon aria-hidden="true" />{mode === "skill" ? "技能" : "上下文"}</span><kbd>{mode === "skill" ? "/" : "@"}</kbd></div>
-    {items.length ? items.map((item, index) => {
-      const Icon = item.icon;
-      const active = selected.includes(item.id);
-      return <button
-        type="button"
-        role="option"
-        aria-selected={active}
-        className={index === activeIndex ? "composer-command-item highlighted" : "composer-command-item"}
-        key={item.id}
-        onPointerDown={(event) => event.preventDefault()}
-        onClick={() => onSelect(item)}
-      >
-        <span className="composer-command-icon"><Icon aria-hidden="true" /></span>
-        <span className="composer-command-copy"><strong>{item.label}</strong><small>{item.description}</small>{item.path ? <code>{item.path}</code> : null}</span>
-        <span className={active ? "composer-command-check selected" : "composer-command-check"}>{active ? <Check aria-hidden="true" /> : <kbd>{index + 1}</kbd>}</span>
-      </button>;
-    }) : <div className="composer-command-empty">没有匹配的选项</div>}
+    <div className="composer-command-list">
+      {items.length ? items.map((item, index) => {
+        const Icon = item.icon;
+        const active = selected.includes(item.id);
+        return <button
+          type="button"
+          role="option"
+          aria-selected={active}
+          className={index === activeIndex ? "composer-command-item highlighted" : "composer-command-item"}
+          key={item.id}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => onSelect(item)}
+        >
+          <span className="composer-command-icon"><Icon aria-hidden="true" /></span>
+          <span className="composer-command-copy"><strong>{item.label}</strong><small>{item.description}</small>{item.path ? <code>{item.path}</code> : null}</span>
+          <span className={active ? "composer-command-check selected" : "composer-command-check"}>{active ? <Check aria-hidden="true" /> : <kbd>{index + 1}</kbd>}</span>
+        </button>;
+      }) : <div className="composer-command-empty">没有匹配的选项</div>}
+    </div>
     <div className="composer-command-footer"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>Enter</kbd>添加</span></div>
   </div>;
 }
@@ -673,10 +838,24 @@ function ExampleDialog({
 }): ReactElement {
   const Icon = example?.icon ?? BookOpen;
   const visual = example?.visual ?? "research";
+  const contentRef = useRef<HTMLDivElement>(null);
+  useDialogEntrance(Boolean(example), contentRef, ".example-dialog-visual, .example-dialog-heading, .example-meta, .example-prompt, .dialog-actions", example?.title ?? "");
+
+  useGSAP(() => {
+    const root = contentRef.current;
+    if (!root || !example) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(".example-dialog-stage > .example-art", { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.04, ease: "power2.out", clearProps: "opacity,visibility,transform" });
+      gsap.fromTo(".example-dialog-icon", { autoAlpha: 0, scale: 0.84 }, { autoAlpha: 1, scale: 1, duration: 0.25, ease: "back.out(1.4)", clearProps: "opacity,visibility,transform" });
+    }, root);
+    return () => media.revert();
+  }, { scope: contentRef, dependencies: [Boolean(example), visual], revertOnUpdate: true });
+
   return <Dialog open={Boolean(example)} onOpenChange={(open) => { if (!open) onClose(); }}>
     <DialogPortal>
       <DialogOverlay className="dialog-overlay" />
-      <DialogContent className="dialog-content example-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
+      <DialogContent ref={contentRef} className="dialog-content example-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
         <DialogClose asChild><button type="button" className="dialog-close example-dialog-close" aria-label="关闭"><X aria-hidden="true" /></button></DialogClose>
         <div className="example-dialog-visual" aria-hidden="true">
           <div className="example-dialog-stage">
@@ -718,12 +897,23 @@ function KnowledgeDialog({
   restoreFocus: () => void;
 }): ReactElement {
   const [query, setQuery] = useState("");
+  const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (open) setQuery(""); }, [open]);
   const filtered = contextOptions.filter((item) => `${item.label} ${item.path} ${item.description}`.toLowerCase().includes(query.toLowerCase()));
+  useDialogEntrance(open, contentRef, ".dialog-header, .dialog-search, .context-list, .split-actions");
+  useGSAP(() => {
+    const root = contentRef.current;
+    if (!root || !open) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(".context-item", { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.15, stagger: 0.025, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+    }, root);
+    return () => media.revert();
+  }, { scope: contentRef, dependencies: [open], revertOnUpdate: true });
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogPortal>
       <DialogOverlay className="dialog-overlay" />
-      <DialogContent className="dialog-content workspace-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
+      <DialogContent ref={contentRef} className="dialog-content workspace-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
         <div className="dialog-header">
           <span className="dialog-icon"><Library aria-hidden="true" /></span>
           <div>
@@ -770,6 +960,7 @@ function AgentDialog({
   const [tab, setTab] = useState<"skills" | "preferences">("skills");
   const [query, setQuery] = useState("");
   const [draftInstructions, setDraftInstructions] = useState(customInstructions);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -780,11 +971,30 @@ function AgentDialog({
   }, [customInstructions, open]);
 
   const filtered = skillOptions.filter((skill) => `${skill.label} ${skill.id} ${skill.description}`.toLowerCase().includes(query.toLowerCase()));
+  useDialogEntrance(open, contentRef, ".agent-dialog-nav, .agent-dialog-main");
+  useGSAP(() => {
+    const root = contentRef.current;
+    if (!root || !open) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(".agent-dialog-nav > *, .agent-dialog-heading, .agent-dialog-main > .dialog-search, .agent-dialog-main > .skill-list, .agent-dialog-main > .preferences-form", { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.16, stagger: 0.025, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+    }, root);
+    return () => media.revert();
+  }, { scope: contentRef, dependencies: [open], revertOnUpdate: true });
+  useGSAP(() => {
+    const root = contentRef.current;
+    if (!root || !open) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(".agent-dialog-main > .skill-list, .agent-dialog-main > .preferences-form", { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.18, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+    }, root);
+    return () => media.revert();
+  }, { scope: contentRef, dependencies: [tab], revertOnUpdate: true });
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogPortal>
       <DialogOverlay className="dialog-overlay" />
-      <DialogContent className="dialog-content agent-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
+      <DialogContent ref={contentRef} className="dialog-content agent-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
         <DialogTitle className="sr-only">Agent 设置</DialogTitle>
         <DialogDescription className="sr-only">管理本地 Codex 的技能与任务偏好。</DialogDescription>
         <aside className="agent-dialog-nav">
@@ -854,6 +1064,10 @@ export function App(): ReactElement {
   const [isStarting, setIsStarting] = useState(false);
   const conversationScroll = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const appShellRef = useRef<HTMLDivElement | null>(null);
+  const actionButtonRef = useRef<HTMLButtonElement | null>(null);
+  const jumpLatestRef = useRef<HTMLButtonElement | null>(null);
+  const toastRef = useRef<HTMLDivElement | null>(null);
   const exampleTriggerRef = useRef<HTMLButtonElement | null>(null);
   const knowledgeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const agentTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -906,6 +1120,67 @@ export function App(): ReactElement {
     if (!node || !followLatest) return;
     node.scrollTo({ top: node.scrollHeight, behavior: isRunning ? "auto" : "smooth" });
   }, [conversation?.runs.length, renderedEventCount, followLatest, isRunning]);
+
+  useGSAP(() => {
+    const root = appShellRef.current;
+    if (!root) return;
+    const media = gsap.matchMedia();
+    media.add("(min-width: 721px) and (prefers-reduced-motion: no-preference)", () => {
+      gsap.timeline({ defaults: { ease: "power2.out" } })
+        .fromTo(".sidebar", { autoAlpha: 0, x: -8 }, { autoAlpha: 1, x: 0, duration: 0.28, clearProps: "transform,opacity,visibility" })
+        .fromTo(".sidebar .brand-mark", { autoAlpha: 0, scale: 0.86, rotation: -5 }, { autoAlpha: 1, scale: 1, rotation: 0, duration: 0.32, ease: "back.out(1.35)", clearProps: "transform,opacity,visibility" }, "<0.05")
+        .fromTo(".sidebar .account-switcher, .sidebar .nav-item, .sidebar .sidebar-section, .sidebar-bottom", { autoAlpha: 0, x: -5 }, { autoAlpha: 1, x: 0, duration: 0.22, stagger: 0.025, clearProps: "transform,opacity,visibility" }, "<0.03");
+    }, root);
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.timeline({ defaults: { ease: "power2.out" } })
+        .fromTo(".main-header", { autoAlpha: 0, y: -4 }, { autoAlpha: 1, y: 0, duration: 0.26, clearProps: "transform,opacity,visibility" })
+        .fromTo(".composer-region", { autoAlpha: 0, y: 7 }, { autoAlpha: 1, y: 0, duration: 0.28, clearProps: "transform,opacity,visibility" }, 0.04);
+    }, root);
+    return () => media.revert();
+  }, { scope: appShellRef });
+
+  useGSAP(() => {
+    const root = appShellRef.current;
+    const view = root?.querySelector<HTMLElement>(".conversation-view");
+    if (!root || !view || !conversation) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(view, { autoAlpha: 0, y: 7 }, { autoAlpha: 1, y: 0, duration: 0.26, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+    }, root);
+    return () => media.revert();
+  }, { scope: appShellRef, dependencies: [Boolean(conversation)], revertOnUpdate: true });
+
+  useGSAP(() => {
+    const button = actionButtonRef.current;
+    if (!button) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(button, { autoAlpha: 0.45, scale: 0.82, rotation: isRunning ? -7 : 7 }, { autoAlpha: 1, scale: 1, rotation: 0, duration: 0.22, ease: "back.out(1.45)", clearProps: "transform,opacity,visibility" });
+    }, button);
+    return () => media.revert();
+  }, { scope: appShellRef, dependencies: [isRunning], revertOnUpdate: true });
+
+  useGSAP(() => {
+    const button = jumpLatestRef.current;
+    if (!button || followLatest) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(button, { autoAlpha: 0, y: 7, scale: 0.96 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.2, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+    }, button);
+    return () => media.revert();
+  }, { scope: appShellRef, dependencies: [followLatest], revertOnUpdate: true });
+
+  useGSAP(() => {
+    const toast = toastRef.current;
+    if (!toast || !error) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.timeline({ defaults: { ease: "power2.out" } })
+        .fromTo(toast, { autoAlpha: 0, x: 12, y: 7 }, { autoAlpha: 1, x: 0, y: 0, duration: 0.22, clearProps: "transform,opacity,visibility" })
+        .fromTo(".toast-icon", { scale: 0.8 }, { scale: 1, duration: 0.2, ease: "back.out(1.5)", clearProps: "transform" }, "<0.04");
+    }, toast);
+    return () => media.revert();
+  }, { scope: appShellRef, dependencies: [Boolean(error)], revertOnUpdate: true });
 
   function rememberTask(task: RecentTask): void {
     setRecentTasks((previous) => {
@@ -1225,12 +1500,11 @@ export function App(): ReactElement {
     }
   }
 
-  const activeExamples = examples[activeTab];
   const connectionLabel = connection === "open" ? "实时" : connection === "connecting" ? "连接中" : connection === "closed" ? "断开" : "空闲";
   const visibleContextCount = selectedContexts.filter((id) => id !== "workspace").length;
   const runtimeLabel = connection === "open" ? "事件流已连接" : connection === "connecting" ? "正在连接事件流" : connection === "closed" ? "事件流已断开" : "等待新任务";
 
-  return <TooltipProvider><div className="app-shell">
+  return <TooltipProvider><div ref={appShellRef} className="app-shell">
     {sidebarOpen ? <button type="button" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="关闭导航" /> : null}
     <aside className={sidebarOpen ? "sidebar sidebar-open" : "sidebar"} aria-label="主导航">
       <div className="brand-row">
@@ -1276,34 +1550,13 @@ export function App(): ReactElement {
       </header>
 
       <div className={conversation ? "main-body conversation-mode" : "main-body"}>
-        {!conversation ? <section className="launch-view">
-          <div className="launch-inner">
-            <h1>{greeting()}</h1>
-            <div className="workspace-context"><Folder aria-hidden="true" /><span>OpenRigor</span><small>main</small></div>
-            <div className="category-tabs" role="tablist" aria-label="任务分类">{tabs.map((tab, index) => <button id={`task-tab-${tab.id}`} key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls="task-examples" tabIndex={activeTab === tab.id ? 0 : -1} className={activeTab === tab.id ? "category-tab selected" : "category-tab"} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
-              if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-              event.preventDefault();
-              const offset = event.key === "ArrowRight" ? 1 : -1;
-              const next = tabs[(index + offset + tabs.length) % tabs.length];
-              if (!next) return;
-              setActiveTab(next.id);
-              window.setTimeout(() => document.getElementById(`task-tab-${next.id}`)?.focus(), 0);
-            }}>{tab.label}</button>)}</div>
-            <div id="task-examples" className="example-grid" role="tabpanel" tabIndex={0} aria-labelledby={`task-tab-${activeTab}`}>{activeExamples.map((example) => {
-              const Icon = example.icon;
-              return <button type="button" className="example-card" key={example.title} onClick={(event) => { exampleTriggerRef.current = event.currentTarget; setSelectedExample(example); }} aria-label={`预览案例：${example.title}`}>
-                <span className="example-body"><span className="example-kicker"><Icon aria-hidden="true" />工作流</span><strong>{example.title}</strong><span>{example.description}</span></span>
-                <ExamplePreviewArt visual={example.visual ?? "research"} />
-              </button>;
-            })}</div>
-          </div>
-        </section> : <section className="conversation-view">
+        {!conversation ? <LaunchView activeTab={activeTab} onTabChange={setActiveTab} onOpenExample={(example, trigger) => { exampleTriggerRef.current = trigger; setSelectedExample(example); }} /> : <section className="conversation-view">
           <div className="conversation-scroll" ref={conversationScroll} onScroll={handleConversationScroll}>
             <div className="conversation-column">
               {conversation.runs.map((run) => <ConversationRunTurn key={run.runId} run={run} copied={copiedRunId === run.runId} onCopy={(runId, answer) => { void copyAnswer(runId, answer); }} connection={connection} />)}
             </div>
           </div>
-          {!followLatest ? <button type="button" className="jump-latest" onClick={() => { setFollowLatest(true); conversationScroll.current?.scrollTo({ top: conversationScroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown aria-hidden="true" />跳到最新</button> : null}
+          {!followLatest ? <button ref={jumpLatestRef} type="button" className="jump-latest" onClick={() => { setFollowLatest(true); conversationScroll.current?.scrollTo({ top: conversationScroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown aria-hidden="true" />跳到最新</button> : null}
         </section>}
       </div>
 
@@ -1312,8 +1565,8 @@ export function App(): ReactElement {
           <ComposerPalette open={Boolean(paletteMode)} mode={paletteMode} items={paletteItems} activeIndex={paletteIndex} selected={paletteMode === "skill" ? selectedSkills : selectedContexts} onSelect={selectPaletteItem} />
         <form className="composer" onSubmit={submit}>
           {(selectedSkills.length || hasExplicitContexts) ? <div className="composer-chips">
-            {selectedContexts.filter((id) => id !== "workspace").map((id) => { const item = contextOptions.find((context) => context.id === id); return item ? <button type="button" key={id} onClick={() => setSelectedContexts((current) => current.filter((value) => value !== id))}><Library aria-hidden="true" />{item.label}<X aria-hidden="true" /></button> : null; })}
-            {selectedSkills.map((id) => { const item = skillOptions.find((skill) => skill.id === id); return item ? <button type="button" key={id} onClick={() => setSelectedSkills((current) => current.filter((value) => value !== id))}><Layers3 aria-hidden="true" />{item.label}<X aria-hidden="true" /></button> : null; })}
+            {selectedContexts.filter((id) => id !== "workspace").map((id) => { const item = contextOptions.find((context) => context.id === id); return item ? <ComposerChip key={id} icon={Library} label={item.label} onRemove={() => setSelectedContexts((current) => current.filter((value) => value !== id))} /> : null; })}
+            {selectedSkills.map((id) => { const item = skillOptions.find((skill) => skill.id === id); return item ? <ComposerChip key={id} icon={Layers3} label={item.label} onRemove={() => setSelectedSkills((current) => current.filter((value) => value !== id))} /> : null; })}
           </div> : null}
           <textarea ref={textareaRef} value={prompt} onChange={(event) => updatePrompt(event.target.value)} onKeyDown={handleComposerKeyDown} onFocus={() => { const token = prompt.match(/(?:^|\s)([\/@])[^\s]*$/); if (token) setPaletteMode(token[1] === "/" ? "skill" : "context"); }} placeholder={isRunning ? "当前任务执行中，可先准备下一条任务" : "描述你的任务，输入 / 选择技能与上下文"} rows={2} aria-label="任务描述" />
           <div className="composer-toolbar">
@@ -1359,7 +1612,7 @@ export function App(): ReactElement {
             </div>
             <div className="composer-right">
               <span className="context-meter" title="本次任务将使用当前工作区"><span className="meter-ring" />本机</span>
-              {isRunning ? <button type="button" className="stop-button" onClick={() => void cancelRun()} aria-label="停止任务"><Square aria-hidden="true" /></button> : <button type="submit" className="send-button" disabled={isStarting || !prompt.trim()} aria-label="发送任务"><ArrowUp aria-hidden="true" /></button>}
+              {isRunning ? <button ref={actionButtonRef} type="button" className="stop-button" onClick={() => void cancelRun()} aria-label="停止任务"><Square aria-hidden="true" /></button> : <button ref={actionButtonRef} type="submit" className="send-button" disabled={isStarting || !prompt.trim()} aria-label="发送任务"><ArrowUp aria-hidden="true" /></button>}
             </div>
           </div>
         </form>
@@ -1371,6 +1624,6 @@ export function App(): ReactElement {
     <KnowledgeDialog open={workspacePanel === "knowledge"} onOpenChange={(open) => setWorkspacePanel(open ? "knowledge" : null)} selected={selectedContexts} onToggle={(id) => toggleSelected(id, setSelectedContexts, selectedContexts)} restoreFocus={() => knowledgeTriggerRef.current?.focus()} />
     <AgentDialog open={workspacePanel === "agent"} onOpenChange={(open) => setWorkspacePanel(open ? "agent" : null)} selectedSkills={selectedSkills} onToggleSkill={(id) => toggleSelected(id, setSelectedSkills, selectedSkills)} customInstructions={customInstructions} onSaveInstructions={(value) => { setCustomInstructions(value); window.localStorage.setItem("openrigor.instructions", value); }} restoreFocus={() => agentTriggerRef.current?.focus()} />
 
-    {error ? <div className="toast" role="alert"><span className="toast-icon"><CircleHelp aria-hidden="true" /></span><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="关闭"><X aria-hidden="true" /></button></div> : null}
+    {error ? <div ref={toastRef} className="toast" role="alert"><span className="toast-icon"><CircleHelp aria-hidden="true" /></span><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="关闭"><X aria-hidden="true" /></button></div> : null}
   </div></TooltipProvider>;
 }
