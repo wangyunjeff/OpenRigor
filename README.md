@@ -8,9 +8,9 @@ This repository is the implementation workspace created from the ClawsGO public-
 
 ## Current status
 
-- Research baseline: complete. Read [the full technical report](docs/TECHNICAL_REPORT.md).
+- Research baseline: complete. Read [the full technical report](docs/TECHNICAL_REPORT.md) and the focused [cloud runtime architecture report](docs/CLOUD_RUNTIME_ARCHITECTURE.md).
 - Working local alpha: real Codex app-server execution, streamed answers/reasoning/tools/files, SSE replay, stop/interrupt, and same-thread follow-up turns.
-- Interface: an original desktop-first operator console with preview-before-send examples, model/effort controls, knowledge and skill selectors, structured reasoning/tool output, and a browser-side recent-task list.
+- Interface: an original desktop-first operator console with preview-before-send examples, Light/Dark/System themes, Codex-style Sol/Terra/Luna and `low` through `max` controls, a separate Ultra multi-agent mode, knowledge and skill selectors, structured reasoning/tool output, and a browser-side recent-task list.
 - Scope: one local user and one configured workspace. Recent conversations can restore their complete in-memory run chain, but runs/events are still process-memory only; attachments, approvals, queued follow-ups, and restart-safe server history are not implemented yet.
 - Production execution: intentionally not enabled. A hosted release still needs the durable worker and sandbox boundary described in the architecture docs.
 

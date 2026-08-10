@@ -36,8 +36,8 @@ Exit criteria: adversarial tool tests cannot read control-plane secrets or escap
 ## M3 — product workflows
 
 - [ ] Durable goals, todos, approvals, queued follow-up messages, stop/continue.
-- [ ] Multi-model routing and effort policy.
-- [ ] Subagent/cluster execution with parent-child trace IDs.
+- [ ] Durable multi-model routing and organization-level effort policy (the local alpha already exposes Sol/Terra/Luna and native effort selection).
+- [ ] Hosted Ultra/subagent execution with durable parent-child trace IDs (the local alpha can request Codex Ultra but does not yet own its cloud worker lifecycle).
 - [ ] Searchable conversation history and read-only share links.
 - [ ] Notifications and offline/resume UX.
 

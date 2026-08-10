@@ -32,6 +32,38 @@ test("creates an ordered conversation chain while preserving the legacy run deta
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
   try {
+    const lunaUltraResponse = await fetch(`${baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "unsupported Ultra", model: "gpt-5.6-luna", mode: "ultra" })
+    });
+    assert.equal(lunaUltraResponse.status, 400);
+    assert.deepEqual(await lunaUltraResponse.json(), {
+      error: "gpt-5.6-luna does not support ultra mode; choose standard mode or gpt-5.6-sol/gpt-5.6-terra"
+    });
+
+    const autoUltraResponse = await fetch(`${baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "ambiguous Ultra", model: "auto", mode: "ultra" })
+    });
+    assert.equal(autoUltraResponse.status, 400);
+    assert.deepEqual(await autoUltraResponse.json(), {
+      error: "ultra mode requires an explicit gpt-5.6-sol or gpt-5.6-terra model"
+    });
+
+    const solUltraResponse = await fetch(`${baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "parallel research", model: "gpt-5.6-sol", mode: "ultra", effort: "xhigh" })
+    });
+    assert.equal(solUltraResponse.status, 202);
+    const solUltra = await solUltraResponse.json() as AcceptedRun;
+    const solUltraDetail = await waitForTerminal(baseUrl, solUltra.runId);
+    assert.equal(solUltraDetail.snapshot.model, "gpt-5.6-sol");
+    assert.equal(solUltraDetail.snapshot.mode, "ultra");
+    assert.equal(solUltraDetail.snapshot.effort, "max");
+
     const rootRequest = {
       prompt: "  root prompt  ",
       model: " auto ",
@@ -67,7 +99,7 @@ test("creates an ordered conversation chain while preserving the legacy run deta
     const conflictingRequests = [
       { ...rootRequest, prompt: "different prompt" },
       { ...rootRequest, model: "different-model" },
-      { ...rootRequest, mode: "cluster" },
+      { ...rootRequest, model: "gpt-5.6-sol", mode: "ultra" },
       { ...rootRequest, effort: "deep" },
       { ...rootRequest, workspaceId: "workspace_b" },
       { ...rootRequest, attachments: [{ fileId: "file_1", name: "paper.pdf", mimeType: "application/pdf", sizeBytes: 42 }] },

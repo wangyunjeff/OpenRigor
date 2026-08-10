@@ -73,3 +73,42 @@ test("continues a live Codex thread with a second turn and rejects concurrent tu
     await launcher.cleanup();
   }
 });
+
+test("passes native model/effort values and treats Ultra as a guarded Codex orchestration value", async () => {
+  const launcher = await createFakeCodexLauncher();
+  const client = new CodexAppServerClient({ command: launcher.command, requestTimeoutMs: 2_000, turnTimeoutMs: 2_000 });
+  try {
+    const ultra = await client.run({
+      prompt: "verify-ultra",
+      cwd: dirname(fixture),
+      model: "gpt-5.6-sol",
+      effort: "ultra",
+      ephemeral: true
+    });
+    assert.equal(ultra.status, "completed");
+
+    const luna = await client.run({
+      prompt: "verify-luna-max",
+      cwd: dirname(fixture),
+      threadId: ultra.threadId,
+      model: "gpt-5.6-luna",
+      effort: "max",
+      ephemeral: true
+    });
+    assert.equal(luna.status, "completed");
+
+    await assert.rejects(
+      client.run({
+        prompt: "unsupported",
+        cwd: dirname(fixture),
+        threadId: ultra.threadId,
+        model: "gpt-5.6-luna",
+        effort: "ultra"
+      }),
+      /gpt-5\.6-luna does not support Codex Ultra/
+    );
+  } finally {
+    await client.close();
+    await launcher.cleanup();
+  }
+});

@@ -3,6 +3,7 @@ import readline from "node:readline";
 const input = readline.createInterface({ input: process.stdin });
 let threadStarts = 0;
 let turnStarts = 0;
+let threadModel;
 
 function write(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -26,6 +27,7 @@ input.on("line", (line) => {
       fail(message.id, "thread/start must only be called once");
       return;
     }
+    threadModel = message.params?.model;
     write({ id: message.id, result: { thread: { id: "thread_fake" } } });
     return;
   }
@@ -43,6 +45,14 @@ input.on("line", (line) => {
     turnStarts += 1;
     const turnId = `turn_${turnStarts}`;
     const prompt = message.params?.input?.[0]?.text ?? "";
+    if (prompt === "verify-ultra" && (threadModel !== "gpt-5.6-sol" || message.params?.model !== "gpt-5.6-sol" || message.params?.effort !== "ultra")) {
+      fail(message.id, `unexpected Ultra params: ${JSON.stringify({ threadModel, model: message.params?.model, effort: message.params?.effort })}`);
+      return;
+    }
+    if (prompt === "verify-luna-max" && (message.params?.model !== "gpt-5.6-luna" || message.params?.effort !== "max")) {
+      fail(message.id, `unexpected Luna params: ${JSON.stringify({ model: message.params?.model, effort: message.params?.effort })}`);
+      return;
+    }
     write({ id: message.id, result: { turn: { id: turnId, status: "inProgress", items: [] } } });
     write({ method: "turn/started", params: { threadId: "thread_fake", turn: { id: turnId, status: "inProgress", items: [] } } });
     write({ method: "item/agentMessage/delta", params: { threadId: "thread_fake", turnId, itemId: `item_${turnStarts}`, delta: `answer:${prompt}` } });

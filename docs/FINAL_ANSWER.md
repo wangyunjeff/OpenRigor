@@ -1,12 +1,14 @@
 # Final handoff — 2026-08-10
 
-jeff，`OpenRigor` 已经从调研骨架推进到可直接使用的本地 Codex alpha，公开项目地址：
+jeff，`OpenRigor` 已经是一套可直接使用的本地 Codex alpha，公开项目地址：
 
 <https://github.com/wangyunjeff/OpenRigor>
 
-当前交付内容会提交到 `main`，包含桌面端视觉重构、案例预览确认、模型/effort 菜单、知识与技能选择、结构化执行时间线、最近任务回读，以及前后端提交幂等和异步竞态隔离。
+本轮把运行设置升级成 Codex 风格的统一菜单：`GPT-5.6 Sol / Terra / Luna / Auto`，以及 `Low / Medium / High / XHigh / Max`。Ultra 作为独立的多 Agent 模式存在，只允许显式选择 Sol/Terra；Luna 的上限是 Max。前后端使用同一能力矩阵，旧版 `fast/balanced/deep/cluster` 请求仍可兼容。
 
-现在的第一版不是假聊天框：后端直接启动本机已登录的 `codex app-server`，前端可以发送真实任务，并显示文本流、思考过程、工具调用、命令输出、文件变更、状态和完成结果；停止按钮会调用 `turn/interrupt`。界面按照已观察到的 ClawsGO 深色任务工作台结构做了 clean-room 实现，没有复制第三方源码、品牌、截图或受保护素材。
+界面现已支持 Light、Dark、System 三档主题并持久化选择。案例确认弹窗中的两张成果预览会从左右错层进入、轻微旋转落位并形成光影层次；重复打开会重新播放，系统要求减少动效时保持静态。整体继续采用 clean-room 设计，没有复制 ClawsGo 源码、品牌、截图或受保护素材。
+
+后端仍直接连接本机已登录的 `codex app-server`：可以发送真实任务、在同一 Codex thread 上继续对话，并显示文本、reasoning、工具、命令输出、文件变化、状态和完成结果；停止按钮调用 `turn/interrupt`。云端路径及 ClawsGo 多运行时调查见 [CLOUD_RUNTIME_ARCHITECTURE.md](CLOUD_RUNTIME_ARCHITECTURE.md)。
 
 本地使用：
 
@@ -19,13 +21,15 @@ pnpm smoke:codex
 pnpm dev:codex
 ```
 
-默认打开 <http://127.0.0.1:5173>（API 默认监听 <http://127.0.0.1:8787>）。本次验收实例因端口占用使用了 Web `5174` / API `8788`。默认沙箱为 `workspace-write`，Codex 可以在这个仓库中工作；只想检查、不允许改文件时，先设置：
+标准入口是 Web <http://127.0.0.1:5173>、API <http://127.0.0.1:8787>。本轮保留的验收服务正在 Web <http://127.0.0.1:5174>、API <http://127.0.0.1:8787> 运行。默认沙箱为 `workspace-write`；只读检查可先设置：
 
 ```powershell
 $env:OPENRIGOR_CODEX_SANDBOX = "read-only"
 pnpm dev:codex
 ```
 
-本轮已经真实验证：Codex app-server 的 initialize/thread/turn 链路、浏览器 SSE 流式回复、真实工具事件、Markdown、运行中取消、最近任务回读、案例“预览 -> 确认 -> 预填 -> 手动发送”、提交幂等、类型检查、API/协议单元测试和生产构建。最终烟测结果为 Codex `OPENRIGOR_READY`，HTTP/SSE 任务正常完成。
+本轮全仓验证通过：TypeScript、25 个单元测试（Protocol 6、API 6、Web 13）、生产构建、`git diff --check`，以及 Playwright 对 1440px 桌面端的主题、模型菜单、Luna/Ultra 限制、案例弹窗重开和 reduced-motion 检查。生产构建仍有单入口包超过 500 kB 的 Vite 性能提示，不影响当前本地 alpha。
 
-当前边界也很清楚：这是单用户、单工作区、本机 Codex、进程内存运行版本。浏览器只保存最近任务的 run 引用；API 重启后对应记录会丢失。附件、交互审批、同线程追问、服务端持久历史、远程服务器和生产级隔离尚未实现。下一步按 `docs/ROADMAP.md` 做 PostgreSQL 事件表与恢复，再补多轮对话、审批和受控 worker，不先扩团队、计费或云主机。
+Image 2 素材位已经完成设计方向和提示词，但本机 `gpt-image-2` 高质量请求实测返回上游 `401`，因此没有拿占位图或伪生成图顶替。下一步只需在本机配置一个有 GPT Image 权限的 `OPENAI_API_KEY`（不要提交到 Git，也不要发到聊天里），即可生成并筛选论文脉络与证据矩阵两张正式素材。
+
+当前边界：单用户、单固定工作区、服务端进程内存。API/app-server 重启后 run 映射仍会丢失；附件、交互审批、服务端持久历史、远程沙箱和生产级租户隔离尚未完成。接下来优先做 PostgreSQL 事件表、outbox/worker、重放与 gVisor POC，而不是直接把本地登录态暴露成公网服务。

@@ -47,6 +47,8 @@ import {
   ListTodo,
   Menu,
   MessageSquare,
+  Monitor,
+  Moon,
   AtSign,
   Palette,
   PenLine,
@@ -58,6 +60,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Square,
+  Sun,
   Tags,
   Target,
   Terminal,
@@ -86,13 +89,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuPortal,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from "./components/ui/dropdown-menu";
 import {
@@ -119,6 +118,22 @@ import {
   toolElapsedMs,
   type RunActivityPresentation
 } from "./run-presentation";
+import {
+  applyTheme,
+  effortLabel,
+  effortOptions,
+  initialThemePreference,
+  modelLabel,
+  modelOptions,
+  modelSupportsUltra,
+  normalizeModeForModel,
+  persistTheme,
+  themeOptions,
+  type Effort,
+  type ModelId,
+  type RunMode,
+  type ThemePreference
+} from "./workspace-preferences";
 
 gsap.registerPlugin(useGSAP);
 
@@ -126,8 +141,6 @@ const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "ht
 
 type ConnectionState = "idle" | "connecting" | "open" | "closed";
 type TabId = "research" | "services" | "engineering" | "marketing" | "management" | "creative";
-type ModelId = "auto" | "gpt-5.6-terra" | "gpt-5.6-sol";
-type Effort = "fast" | "balanced" | "deep";
 type WorkspacePanel = "knowledge" | "agent" | null;
 type ComposerPaletteMode = "skill" | "context" | null;
 type ToolEvent = Extract<RunEvent, { type: "tool" }>;
@@ -224,18 +237,6 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: "creative", label: "创意创作" }
 ];
 
-const modelOptions: Array<{ value: ModelId; label: string; description: string }> = [
-  { value: "auto", label: "Auto", description: "使用 Codex 当前默认模型" },
-  { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", description: "日常任务与快速执行" },
-  { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", description: "复杂推理与代码任务" }
-];
-
-const effortOptions: Array<{ value: Effort; label: string; description: string }> = [
-  { value: "fast", label: "快速", description: "缩短响应时间" },
-  { value: "balanced", label: "均衡", description: "速度与质量平衡" },
-  { value: "deep", label: "极限", description: "投入更多推理预算" }
-];
-
 const skillOptions: SkillOption[] = [
   { id: "browser", label: "浏览器", description: "检查网页与交互状态", icon: Globe2 },
   { id: "frontend-design", label: "前端设计", description: "优化产品界面与体验", icon: Palette },
@@ -257,6 +258,12 @@ const contextOptions: ContextOption[] = [
   { id: "report", label: "技术报告", path: "docs/TECHNICAL_REPORT.md", description: "ClawsGO 技术调研与复刻路线", icon: FileText },
   { id: "design", label: "设计系统", path: "design-system/openrigor/MASTER.md", description: "OpenRigor 的视觉与交互规则", icon: Palette }
 ];
+
+const themeIcons: Record<ThemePreference, LucideIcon> = {
+  light: Sun,
+  dark: Moon,
+  system: Monitor
+};
 
 const examples: Record<TabId, ExampleTask[]> = {
   research: [
@@ -350,14 +357,6 @@ function phaseLabel(phase: ToolEvent["tool"]["phase"]): string {
   if (phase === "failed") return "失败";
   if (phase === "running") return "运行中";
   return "准备中";
-}
-
-function modelLabel(model: string): string {
-  return modelOptions.find((option) => option.value === model)?.label ?? model;
-}
-
-function effortLabel(effort: Effort): string {
-  return effortOptions.find((option) => option.value === effort)?.label ?? effort;
 }
 
 function toolLabel(name: string): string {
@@ -825,6 +824,78 @@ function ConversationRunTurn({
   </section>;
 }
 
+function ExampleDialogPanel({
+  example,
+  onUse,
+  restoreFocus
+}: {
+  example: ExampleTask;
+  onUse: (example: ExampleTask) => void;
+  restoreFocus: () => void;
+}): ReactElement {
+  const Icon = example.icon;
+  const visual = example.visual ?? "research";
+  const contentRef = useRef<HTMLDivElement>(null);
+  useDialogEntrance(true, contentRef, ".example-dialog-visual, .example-dialog-heading, .example-meta, .example-prompt, .dialog-actions", example.title);
+
+  useGSAP(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      const previews = gsap.utils.toArray<HTMLElement>(".example-dialog-stage > .example-art");
+      const [primaryPreview, companionPreview] = previews;
+      const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
+      timeline
+        .fromTo(".example-dialog-glow", { autoAlpha: 0, scale: 0.84 }, { autoAlpha: 1, scale: 1, duration: 0.62, clearProps: "transform,opacity,visibility" }, 0.02);
+      if (primaryPreview) {
+        timeline.fromTo(
+          primaryPreview,
+          { autoAlpha: 0, x: -72, y: 26, rotation: -13, scale: 1.68 },
+          { autoAlpha: 1, x: 0, y: 0, rotation: -5, scale: 1.92, duration: 0.56, clearProps: "transform,opacity,visibility" },
+          0.06
+        );
+      }
+      if (companionPreview) {
+        timeline.fromTo(
+          companionPreview,
+          { autoAlpha: 0, x: 76, y: 34, rotation: 12, scale: 1.64 },
+          { autoAlpha: 1, x: 0, y: 0, rotation: 4, scale: 1.9, duration: 0.62, clearProps: "transform,opacity,visibility" },
+          0.17
+        );
+      }
+      timeline.fromTo(".example-dialog-icon", { autoAlpha: 0, scale: 0.84 }, { autoAlpha: 1, scale: 1, duration: 0.28, ease: "back.out(1.35)", clearProps: "transform,opacity,visibility" }, 0.2);
+    }, root);
+    return () => media.revert();
+  }, { scope: contentRef, dependencies: [visual], revertOnUpdate: true });
+
+  return <DialogContent ref={contentRef} className="dialog-content example-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
+        <DialogClose asChild><button type="button" className="dialog-close example-dialog-close" aria-label="关闭"><X aria-hidden="true" /></button></DialogClose>
+        <div className="example-dialog-visual" aria-hidden="true">
+          <div className="example-dialog-stage">
+            <span className="example-dialog-glow" />
+            <ExamplePreviewArt visual={visual} />
+            <ExamplePreviewArt visual={companionVisuals[visual]} />
+          </div>
+        </div>
+        <div className="example-dialog-body">
+          <div className="example-dialog-heading">
+            <span className="example-dialog-icon"><Icon aria-hidden="true" /></span>
+            <div>
+              <DialogTitle className="dialog-title">{example.title}</DialogTitle>
+              <DialogDescription className="dialog-description">{example.description}</DialogDescription>
+            </div>
+          </div>
+          <div className="example-meta"><span>本地 Codex</span><span>工作区任务</span><small>确认后可编辑</small></div>
+          <div className="example-prompt"><p>{example.prompt}</p></div>
+          <div className="dialog-actions">
+            <DialogClose asChild><button type="button" className="secondary-button">取消</button></DialogClose>
+            <button type="button" className="primary-button" onClick={() => onUse(example)}>使用这个案例</button>
+          </div>
+        </div>
+      </DialogContent>;
+}
+
 function ExampleDialog({
   example,
   onClose,
@@ -836,50 +907,11 @@ function ExampleDialog({
   onUse: (example: ExampleTask) => void;
   restoreFocus: () => void;
 }): ReactElement {
-  const Icon = example?.icon ?? BookOpen;
-  const visual = example?.visual ?? "research";
-  const contentRef = useRef<HTMLDivElement>(null);
-  useDialogEntrance(Boolean(example), contentRef, ".example-dialog-visual, .example-dialog-heading, .example-meta, .example-prompt, .dialog-actions", example?.title ?? "");
-
-  useGSAP(() => {
-    const root = contentRef.current;
-    if (!root || !example) return;
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.fromTo(".example-dialog-stage > .example-art", { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.04, ease: "power2.out", clearProps: "opacity,visibility,transform" });
-      gsap.fromTo(".example-dialog-icon", { autoAlpha: 0, scale: 0.84 }, { autoAlpha: 1, scale: 1, duration: 0.25, ease: "back.out(1.4)", clearProps: "opacity,visibility,transform" });
-    }, root);
-    return () => media.revert();
-  }, { scope: contentRef, dependencies: [Boolean(example), visual], revertOnUpdate: true });
-
   return <Dialog open={Boolean(example)} onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogPortal>
+    {example ? <DialogPortal>
       <DialogOverlay className="dialog-overlay" />
-      <DialogContent ref={contentRef} className="dialog-content example-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
-        <DialogClose asChild><button type="button" className="dialog-close example-dialog-close" aria-label="关闭"><X aria-hidden="true" /></button></DialogClose>
-        <div className="example-dialog-visual" aria-hidden="true">
-          <div className="example-dialog-stage">
-            <ExamplePreviewArt visual={visual} />
-            <ExamplePreviewArt visual={companionVisuals[visual]} />
-          </div>
-        </div>
-        <div className="example-dialog-body">
-          <div className="example-dialog-heading">
-            <span className="example-dialog-icon"><Icon aria-hidden="true" /></span>
-            <div>
-              <DialogTitle className="dialog-title">{example?.title ?? "示例任务"}</DialogTitle>
-              <DialogDescription className="dialog-description">{example?.description}</DialogDescription>
-            </div>
-          </div>
-          <div className="example-meta"><span>本地 Codex</span><span>工作区任务</span><small>确认后可编辑</small></div>
-          <div className="example-prompt"><p>{example?.prompt}</p></div>
-          <div className="dialog-actions">
-            <DialogClose asChild><button type="button" className="secondary-button">取消</button></DialogClose>
-            <button type="button" className="primary-button" onClick={() => { if (example) onUse(example); }}>使用这个案例</button>
-          </div>
-        </div>
-      </DialogContent>
-    </DialogPortal>
+      <ExampleDialogPanel key={example.title} example={example} onUse={onUse} restoreFocus={restoreFocus} />
+    </DialogPortal> : null}
   </Dialog>;
 }
 
@@ -1042,8 +1074,10 @@ export function App(): ReactElement {
   const [conversation, setConversation] = useState<ConversationViewState | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [model, setModel] = useState<ModelId>("auto");
-  const [effort, setEffort] = useState<Effort>("balanced");
+  const [model, setModel] = useState<ModelId>("gpt-5.6-sol");
+  const [effort, setEffort] = useState<Effort>("medium");
+  const [mode, setMode] = useState<RunMode>("standard");
+  const [theme, setTheme] = useState<ThemePreference>(initialThemePreference);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>(loadRecentTasks);
   const [selectedExample, setSelectedExample] = useState<ExampleTask | null>(null);
@@ -1082,6 +1116,16 @@ export function App(): ReactElement {
   useEffect(() => {
     window.localStorage.setItem(recentTasksStorageKey, JSON.stringify(recentTasks.slice(0, 8)));
   }, [recentTasks]);
+
+  useEffect(() => {
+    applyTheme(theme);
+    persistTheme(theme);
+    if (theme !== "system") return;
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncSystemTheme = () => applyTheme("system");
+    systemTheme.addEventListener("change", syncSystemTheme);
+    return () => systemTheme.removeEventListener("change", syncSystemTheme);
+  }, [theme]);
 
   useEffect(() => {
     const activeRootRunId = window.localStorage.getItem(activeConversationStorageKey);
@@ -1305,8 +1349,8 @@ export function App(): ReactElement {
         body: JSON.stringify({
           prompt: requestPrompt,
           model,
-          mode: "standard",
-          effort,
+          mode,
+          effort: mode === "ultra" ? "max" : effort,
           clientRequestId,
           ...(continueFromRunId === undefined ? {} : { continueFromRunId })
         }),
@@ -1334,8 +1378,8 @@ export function App(): ReactElement {
         status: body.status ?? "queued",
         prompt: requestPrompt,
         model,
-        mode: "standard",
-        effort,
+        mode,
+        effort: mode === "ultra" ? "max" : effort,
         createdAt: acceptedAt,
         updatedAt: acceptedAt,
         progress: 0,
@@ -1503,6 +1547,24 @@ export function App(): ReactElement {
   const connectionLabel = connection === "open" ? "实时" : connection === "connecting" ? "连接中" : connection === "closed" ? "断开" : "空闲";
   const visibleContextCount = selectedContexts.filter((id) => id !== "workspace").length;
   const runtimeLabel = connection === "open" ? "事件流已连接" : connection === "connecting" ? "正在连接事件流" : connection === "closed" ? "事件流已断开" : "等待新任务";
+  const ThemeIcon = themeIcons[theme];
+
+  function selectModel(value: string): void {
+    const nextModel = value as ModelId;
+    setModel(nextModel);
+    setMode((currentMode) => normalizeModeForModel(nextModel, currentMode));
+  }
+
+  function selectTheme(nextTheme: ThemePreference): void {
+    applyTheme(nextTheme);
+    setTheme(nextTheme);
+  }
+
+  function selectRunMode(value: string): void {
+    const nextMode = value as RunMode;
+    setMode(nextMode);
+    if (nextMode === "ultra") setEffort("max");
+  }
 
   return <TooltipProvider><div ref={appShellRef} className="app-shell">
     {sidebarOpen ? <button type="button" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="关闭导航" /> : null}
@@ -1545,6 +1607,18 @@ export function App(): ReactElement {
         </div>
         <div className="header-actions">
           <span className={`connection connection-${connection}`} role="status" aria-live="polite"><span className="status-dot" />{connectionLabel}</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><button type="button" className="icon-control" aria-label="切换外观" title="切换外观"><ThemeIcon aria-hidden="true" /></button></DropdownMenuTrigger>
+            <DropdownMenuContent className="radix-menu theme-menu" align="end" sideOffset={8}>
+              <DropdownMenuLabel className="menu-caption">外观</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={theme} onValueChange={(value) => selectTheme(value as ThemePreference)}>
+                {themeOptions.map((option) => {
+                  const OptionIcon = themeIcons[option.value];
+                  return <DropdownMenuRadioItem className="radio-menu-item theme-menu-item" value={option.value} key={option.value}><OptionIcon aria-hidden="true" /><span><strong>{option.label}</strong><small>{option.description}</small></span>{theme === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>;
+                })}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <IconTooltip label="Agent 设置"><button type="button" className="icon-control" onClick={(event) => openWorkspaceDialog("agent", event.currentTarget)} aria-label="Agent 设置"><Settings aria-hidden="true" /></button></IconTooltip>
         </div>
       </header>
@@ -1580,31 +1654,24 @@ export function App(): ReactElement {
               </DropdownMenu>
 
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><button type="button" className="model-trigger"><span>{modelLabel(model)}</span><span>·</span><span>{effortLabel(effort)}</span><ChevronDown aria-hidden="true" /></button></DropdownMenuTrigger>
-                <DropdownMenuContent className="radix-menu settings-menu" align="start" side="top" sideOffset={10}>
-                  <DropdownMenuLabel className="menu-caption">运行设置</DropdownMenuLabel>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="submenu-trigger"><span>模式</span><strong>均衡</strong><ChevronRight aria-hidden="true" /></DropdownMenuSubTrigger>
-                    <DropdownMenuPortal><DropdownMenuSubContent className="radix-menu submenu-content" sideOffset={7}>
-                      <DropdownMenuRadioGroup value="standard">
-                        <DropdownMenuRadioItem className="radio-menu-item" value="standard"><span><strong>均衡</strong><small>单 Agent 完成当前任务</small></span><Check aria-hidden="true" /></DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem className="radio-menu-item" value="cluster" disabled><span><strong>Agent 集群</strong><small>多 Agent 编排将在后续开放</small></span></DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuSubContent></DropdownMenuPortal>
-                  </DropdownMenuSub>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="submenu-trigger"><span>模型</span><strong>{modelLabel(model)}</strong><ChevronRight aria-hidden="true" /></DropdownMenuSubTrigger>
-                    <DropdownMenuPortal><DropdownMenuSubContent className="radix-menu submenu-content model-submenu" sideOffset={7}>
-                      <DropdownMenuLabel className="menu-caption">本机 Codex</DropdownMenuLabel>
-                      <DropdownMenuRadioGroup value={model} onValueChange={(value) => setModel(value as ModelId)}>{modelOptions.map((option) => <DropdownMenuRadioItem className="radio-menu-item" value={option.value} key={option.value}><span><strong>{option.label}</strong><small>{option.description}</small></span>{model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup>
-                    </DropdownMenuSubContent></DropdownMenuPortal>
-                  </DropdownMenuSub>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="submenu-trigger"><span>推理强度</span><strong>{effortLabel(effort)}</strong><ChevronRight aria-hidden="true" /></DropdownMenuSubTrigger>
-                    <DropdownMenuPortal><DropdownMenuSubContent className="radix-menu submenu-content" sideOffset={7}>
-                      <DropdownMenuRadioGroup value={effort} onValueChange={(value) => setEffort(value as Effort)}>{effortOptions.map((option) => <DropdownMenuRadioItem className="radio-menu-item" value={option.value} key={option.value}><span><strong>{option.label}</strong><small>{option.description}</small></span>{effort === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup>
-                    </DropdownMenuSubContent></DropdownMenuPortal>
-                  </DropdownMenuSub>
+                <DropdownMenuTrigger asChild><button type="button" className={mode === "ultra" ? "model-trigger ultra-active" : "model-trigger"} aria-label={`模型 ${modelLabel(model)}，推理强度 ${effortLabel(effort)}${mode === "ultra" ? "，Ultra 模式" : ""}`}><span>{modelLabel(model)}</span><span>·</span><span>{effortLabel(effort)}</span>{mode === "ultra" ? <span className="ultra-trigger-badge"><Zap aria-hidden="true" />Ultra</span> : null}<ChevronDown aria-hidden="true" /></button></DropdownMenuTrigger>
+                <DropdownMenuContent className="radix-menu settings-menu model-picker" align="start" side="top" sideOffset={10}>
+                  <DropdownMenuRadioGroup value={model} onValueChange={selectModel}>
+                    <DropdownMenuLabel className="menu-caption">GPT-5.6</DropdownMenuLabel>
+                    {modelOptions.filter((option) => option.group === "gpt-5.6").map((option) => <DropdownMenuRadioItem className="radio-menu-item model-menu-item" value={option.value} key={option.value}><span className="model-orb" aria-hidden="true">{option.value.split("-").at(-1)?.slice(0, 1).toUpperCase()}</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}
+                    <DropdownMenuSeparator className="menu-separator" />
+                    <DropdownMenuLabel className="menu-caption">本地设置</DropdownMenuLabel>
+                    {modelOptions.filter((option) => option.group === "local").map((option) => <DropdownMenuRadioItem className="radio-menu-item model-menu-item" value={option.value} key={option.value}><span className="model-orb model-orb-auto" aria-hidden="true">A</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator className="menu-separator" />
+                  <DropdownMenuLabel className="menu-caption settings-section-heading"><span>推理强度</span><small>{mode === "ultra" ? "Ultra 固定 Max" : effortLabel(effort)}</small></DropdownMenuLabel>
+                  <DropdownMenuRadioGroup className="effort-grid" value={effort} onValueChange={(value) => setEffort(value as Effort)}>{effortOptions.map((option) => <DropdownMenuRadioItem className="effort-menu-item" value={option.value} key={option.value} disabled={mode === "ultra"}><strong>{option.label}</strong><small>{option.description}</small></DropdownMenuRadioItem>)}</DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator className="menu-separator" />
+                  <DropdownMenuLabel className="menu-caption settings-section-heading"><span>运行模式</span><small>独立于推理强度</small></DropdownMenuLabel>
+                  <DropdownMenuRadioGroup className="mode-grid" value={mode} onValueChange={selectRunMode}>
+                    <DropdownMenuRadioItem className="mode-menu-item" value="standard"><span className="mode-icon"><User aria-hidden="true" /></span><span><strong>Standard</strong><small>单 Agent 执行</small></span>{mode === "standard" ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem className="mode-menu-item ultra-mode-item" value="ultra" disabled={!modelSupportsUltra(model)}><span className="mode-icon"><Zap aria-hidden="true" /></span><span><strong>Ultra</strong><small>{modelSupportsUltra(model) ? "多 Agent 并行探索" : model === "gpt-5.6-luna" ? "Luna 不支持；请选 Sol / Terra" : "仅支持 Sol / Terra"}</small></span>{mode === "ultra" ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
                   <DropdownMenuSeparator className="menu-separator" />
                   <DropdownMenuItem className="menu-status" onSelect={(event) => event.preventDefault()}><HardDrive aria-hidden="true" /><span>工作区可写</span><ShieldCheck aria-hidden="true" /></DropdownMenuItem>
                 </DropdownMenuContent>

@@ -10,8 +10,17 @@ export type RunStatus =
   | "failed"
   | "cancelled";
 
-export type RunMode = "standard" | "cluster";
-export type RunEffort = "fast" | "balanced" | "deep";
+export const RUN_MODELS = ["auto", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const;
+export const RUN_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export const ULTRA_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra"] as const;
+
+export type RunModel = typeof RUN_MODELS[number];
+export type UltraRunModel = typeof ULTRA_MODELS[number];
+export type RunMode = "standard" | "ultra";
+export type RunEffort = typeof RUN_EFFORTS[number];
+
+type LegacyRunMode = "cluster";
+type LegacyRunEffort = "fast" | "balanced" | "deep";
 
 export interface AttachmentRef {
   fileId: string;
@@ -22,7 +31,8 @@ export interface AttachmentRef {
 
 export interface RunRequest {
   prompt: string;
-  model?: string;
+  /** Known first-party values are exposed through `RunModel`; custom Codex providers may still use their own model id. */
+  model?: RunModel | (string & {});
   mode?: RunMode;
   effort?: RunEffort;
   workspaceId?: string;
@@ -191,8 +201,27 @@ export function validateRunRequest(value: unknown): RunRequest {
 
   const request: RunRequest = { prompt };
   if (typeof candidate.model === "string" && candidate.model.trim()) request.model = candidate.model.trim();
-  if (candidate.mode === "standard" || candidate.mode === "cluster") request.mode = candidate.mode;
-  if (candidate.effort === "fast" || candidate.effort === "balanced" || candidate.effort === "deep") request.effort = candidate.effort;
+
+  const mode = normalizeRunMode(candidate.mode);
+  if (mode) request.mode = mode;
+
+  const effort = normalizeRunEffort(candidate.effort);
+  if (effort) request.effort = effort;
+
+  // Older clients represented Ultra as an effort. Keep accepting that wire
+  // value, but normalize it into a separate orchestration mode so consumers
+  // never confuse multi-agent execution with a model reasoning-effort level.
+  if (candidate.effort === "ultra") {
+    request.mode = "ultra";
+    request.effort = "max";
+  }
+  if (request.mode === "ultra") request.effort = "max";
+  if (request.mode === "ultra" && !supportsUltraMode(request.model)) {
+    if (request.model === "gpt-5.6-luna") {
+      throw new Error("gpt-5.6-luna does not support ultra mode; choose standard mode or gpt-5.6-sol/gpt-5.6-terra");
+    }
+    throw new Error("ultra mode requires an explicit gpt-5.6-sol or gpt-5.6-terra model");
+  }
   if (typeof candidate.workspaceId === "string" && candidate.workspaceId.trim()) request.workspaceId = candidate.workspaceId.trim();
   if (typeof candidate.clientRequestId === "string" && candidate.clientRequestId.trim()) {
     const clientRequestId = candidate.clientRequestId.trim();
@@ -217,14 +246,34 @@ function isAttachmentRef(value: unknown): value is AttachmentRef {
   return typeof candidate.fileId === "string" && typeof candidate.name === "string";
 }
 
+function normalizeRunMode(value: unknown): RunMode | undefined {
+  if (value === "standard" || value === "ultra") return value;
+  // `cluster` was the protocol-v0 name for the planned multi-agent mode.
+  if (value === ("cluster" satisfies LegacyRunMode)) return "ultra";
+  return undefined;
+}
+
+function normalizeRunEffort(value: unknown): RunEffort | undefined {
+  if (typeof value === "string" && RUN_EFFORTS.some((effort) => effort === value)) return value as RunEffort;
+  if (value === ("fast" satisfies LegacyRunEffort)) return "low";
+  if (value === ("balanced" satisfies LegacyRunEffort)) return "medium";
+  if (value === ("deep" satisfies LegacyRunEffort)) return "max";
+  return undefined;
+}
+
+export function supportsUltraMode(model: string | undefined): model is UltraRunModel {
+  return model === "gpt-5.6-sol" || model === "gpt-5.6-terra";
+}
+
 export function createInitialSnapshot(runId: string, request: RunRequest, now = new Date().toISOString()): RunSnapshot {
+  const mode = request.mode ?? "standard";
   const snapshot: RunSnapshot = {
     runId,
     status: "queued",
     prompt: request.prompt,
     model: request.model ?? "auto",
-    mode: request.mode ?? "standard",
-    effort: request.effort ?? "balanced",
+    mode,
+    effort: mode === "ultra" ? "max" : request.effort ?? "medium",
     createdAt: now,
     updatedAt: now,
     progress: 0

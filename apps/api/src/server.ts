@@ -6,6 +6,7 @@ import {
   PROTOCOL_VERSION,
   createInitialSnapshot,
   isTerminalStatus,
+  supportsUltraMode,
   validateRunRequest,
   type EventBase,
   type FileArtifact,
@@ -19,7 +20,8 @@ import {
 import {
   createCodexAppServerClientFromEnv,
   type CodexAppServerClient,
-  type CodexNotification
+  type CodexNotification,
+  type CodexReasoningEffort
 } from "./codex-app-server.js";
 import {
   IdempotencyConflictError,
@@ -250,12 +252,31 @@ function publishCodexStatus(record: RunRecord, status: RunStatus, options: { pro
   });
 }
 
-function codexEffort(request: RunRequest): string {
+function codexEffort(request: RunRequest): CodexReasoningEffort {
+  // OpenRigor exposes Ultra as an orchestration mode. Codex app-server's
+  // current transport represents that mode through the special `ultra`
+  // effort value; it is not forwarded as a normal model reasoning level.
+  if (request.mode === "ultra") {
+    if (!supportsUltraMode(request.model)) {
+      throw new Error("Codex Ultra requires an explicit gpt-5.6-sol or gpt-5.6-terra model");
+    }
+    return "ultra";
+  }
+
   const configured = process.env.OPENRIGOR_CODEX_EFFORT?.trim();
-  if (configured) return configured;
-  if (request.effort === "fast") return "low";
-  if (request.effort === "deep") return "max";
-  return "medium";
+  if (configured) {
+    if (configured === "fast") return "low";
+    if (configured === "balanced") return "medium";
+    if (configured === "deep") return "max";
+    if (configured === "low" || configured === "medium" || configured === "high" || configured === "xhigh" || configured === "max") {
+      return configured;
+    }
+    if (configured === "ultra") {
+      throw new Error("OPENRIGOR_CODEX_EFFORT=ultra is ambiguous; request mode=ultra explicitly");
+    }
+    throw new Error(`unsupported OPENRIGOR_CODEX_EFFORT: ${configured}`);
+  }
+  return request.effort ?? "medium";
 }
 
 function codexItemId(item: Record<string, unknown>): string | undefined {
@@ -612,7 +633,7 @@ function runRequestFingerprint(request: RunRequest): string {
     prompt: request.prompt,
     model: request.model ?? "auto",
     mode: request.mode ?? "standard",
-    effort: request.effort ?? "balanced",
+    effort: request.effort ?? "medium",
     workspaceId: request.workspaceId ?? null,
     attachments: (request.attachments ?? []).map((attachment) => ({
       fileId: attachment.fileId,

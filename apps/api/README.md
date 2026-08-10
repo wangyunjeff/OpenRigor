@@ -34,6 +34,8 @@ Prerequisites:
 
 Optional settings are documented in the repository `.env.example`. The app-server process is shared. A root HTTP run starts one Codex thread; a follow-up `POST /api/runs` with `continueFromRunId` creates a separate OpenRigor run but sends another `turn/start` to that same live Codex thread. Cancellation is forwarded through `turn/interrupt` for the active run.
 
+The request may select `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna` and a standard reasoning effort from `low` through `max`. `mode=ultra` is kept separate from reasoning effort and asks the local Codex runtime for its multi-agent execution mode. Ultra requires an explicit Sol or Terra selection; Auto, custom models, and Luna (which is capped at `max`) are rejected before a run is accepted.
+
 Follow-ups are accepted only from the latest terminal run in a conversation, and only one run per conversation may be active. `GET /api/runs/:runId` keeps the original `{ snapshot, events }` fields and adds an ordered `conversation.runs` chain for full UI restoration. The accepted response and snapshots expose `conversationId`, `rootRunId`, and (for follow-ups) `parentRunId`.
 
 The default `OPENRIGOR_CODEX_EPHEMERAL=true` is intentionally live-process only. Both the OpenRigor run index and ephemeral Codex history disappear on API/app-server restart. Set the flag to `false` only when local Codex rollout files are desired; cold `thread/resume` recovery and durable OpenRigor metadata are still not implemented.

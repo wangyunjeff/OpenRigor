@@ -21,13 +21,16 @@ export interface CodexTurnResult {
   turn?: unknown;
 }
 
+/** Values accepted by Codex app-server's `turn/start.effort` field. */
+export type CodexReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+
 export interface CodexRunOptions {
   prompt: string;
   cwd: string;
   /** Existing live app-server thread to append this turn to. */
   threadId?: string;
   model?: string;
-  effort?: string;
+  effort?: CodexReasoningEffort;
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   approvalPolicy?: "untrusted" | "on-request" | "never";
   ephemeral?: boolean;
@@ -118,6 +121,9 @@ export class CodexAppServerClient {
   }
 
   public async run(options: CodexRunOptions, callbacks: CodexRunCallbacks = {}): Promise<CodexTurnResult> {
+    if (options.model === "gpt-5.6-luna" && options.effort === "ultra") {
+      throw new Error("gpt-5.6-luna does not support Codex Ultra; use max effort or select gpt-5.6-sol/gpt-5.6-terra");
+    }
     await this.ensureStarted();
 
     let threadId = options.threadId;

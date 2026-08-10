@@ -10,12 +10,20 @@ Content-Type: application/json
 
 {
   "prompt": "Summarize the attached papers",
-  "model": "auto",
+  "model": "gpt-5.6-sol",
   "mode": "standard",
-  "effort": "balanced",
+  "effort": "medium",
   "clientRequestId": "web_01J..."
 }
 ```
+
+### Model, effort, and Ultra
+
+- `model` accepts `auto`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`. `auto` keeps the model chosen by the local Codex runtime; custom provider model IDs remain wire-compatible.
+- `effort` is the single-model reasoning budget: `low`, `medium`, `high`, `xhigh`, or `max`.
+- `mode` is `standard` or `ultra`. Ultra is a multi-agent orchestration mode, not a sixth reasoning-effort level. An Ultra snapshot is normalized to `effort: "max"` while the local Codex adapter sends its dedicated `ultra` execution value.
+- Ultra requires an explicit Sol or Terra selection. Luna supports up to `max`; `auto`, Luna, and custom model IDs with `mode: "ultra"` return `400` so the runtime cannot silently resolve Auto to an incompatible model.
+- Protocol-v0 aliases remain accepted for old clients: `fast` -> `low`, `balanced` -> `medium`, `deep` -> `max`, and `cluster` -> `ultra`.
 
 Response:
 
