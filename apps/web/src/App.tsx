@@ -420,12 +420,13 @@ function ExampleCard({ example, onOpen }: { example: ExampleTask; onOpen: (examp
   const animateHover = contextSafe(() => {
     const root = cardRef.current;
     if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const art = root.querySelector<HTMLElement>(".example-art");
-    const layers = Array.from(root.querySelectorAll<HTMLElement>(".example-art > *"));
-    gsap.killTweensOf([root, art, ...layers]);
+    const stack = root.querySelector<HTMLElement>(".example-art-stack");
+    const media = Array.from(root.querySelectorAll<HTMLElement>(".example-art-stack .example-art-media"));
+    const targets = [root, stack, ...media].filter((target): target is HTMLElement => Boolean(target));
+    gsap.killTweensOf(targets);
     gsap.to(root, { y: -1, duration: 0.16, ease: "power2.out", overwrite: "auto" });
-    gsap.to(".example-art", { y: -2, scale: 1.012, duration: 0.2, ease: "power2.out", overwrite: "auto" });
-    gsap.fromTo(".example-art > *", { autoAlpha: 0.58, y: 3 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.018, ease: "power2.out", overwrite: "auto", clearProps: "transform,opacity,visibility" });
+    if (stack) gsap.to(stack, { y: -2, scale: 1.012, duration: 0.2, ease: "power2.out", overwrite: "auto" });
+    gsap.fromTo(media, { autoAlpha: 0.58, y: 3 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.018, ease: "power2.out", overwrite: "auto", clearProps: "transform,opacity,visibility" });
   });
 
   const animatePointerHover = contextSafe(() => {
@@ -436,12 +437,13 @@ function ExampleCard({ example, onOpen }: { example: ExampleTask; onOpen: (examp
   const resetHover = contextSafe(() => {
     const root = cardRef.current;
     if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const art = root.querySelector<HTMLElement>(".example-art");
-    const layers = Array.from(root.querySelectorAll<HTMLElement>(".example-art > *"));
-    gsap.killTweensOf([root, art, ...layers]);
-    gsap.set(layers, { clearProps: "transform,opacity,visibility" });
+    const stack = root.querySelector<HTMLElement>(".example-art-stack");
+    const media = Array.from(root.querySelectorAll<HTMLElement>(".example-art-stack .example-art-media"));
+    const targets = [root, stack, ...media].filter((target): target is HTMLElement => Boolean(target));
+    gsap.killTweensOf(targets);
+    gsap.set(media, { clearProps: "transform,opacity,visibility" });
     gsap.to(root, { y: 0, duration: 0.26, ease: "power3.out", overwrite: "auto", clearProps: "transform" });
-    gsap.to(".example-art", { y: 0, scale: 1, duration: 0.28, ease: "power3.out", overwrite: "auto", clearProps: "transform" });
+    if (stack) gsap.to(stack, { y: 0, scale: 1, duration: 0.28, ease: "power3.out", overwrite: "auto", clearProps: "transform" });
   });
 
   const resetPointerHover = contextSafe(() => {
@@ -463,6 +465,7 @@ function ExampleCard({ example, onOpen }: { example: ExampleTask; onOpen: (examp
   });
 
   const Icon = example.icon;
+  const visual = example.visual ?? "research";
   return <button
     ref={cardRef}
     type="button"
@@ -478,7 +481,10 @@ function ExampleCard({ example, onOpen }: { example: ExampleTask; onOpen: (examp
     aria-label={`预览案例：${example.title}`}
   >
     <span className="example-body"><span className="example-kicker"><Icon aria-hidden="true" />工作流</span><strong>{example.title}</strong><span>{example.description}</span></span>
-    <ExamplePreviewArt visual={example.visual ?? "research"} generated />
+    <span className="example-art-stack" aria-hidden="true">
+      <ExamplePreviewArt visual={companionVisuals[visual]} generated />
+      <ExamplePreviewArt visual={visual} generated />
+    </span>
   </button>;
 }
 
