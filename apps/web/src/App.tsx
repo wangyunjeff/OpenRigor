@@ -166,6 +166,17 @@ const companionVisuals: Record<ExampleVisual, ExampleVisual> = {
   calendar: "brief"
 };
 
+const generatedVisualAssets: Record<ExampleVisual, string> = {
+  research: "/generated/research-lineage.webp",
+  slides: "/generated/research-storyboard.webp",
+  chart: "/generated/research-trend.webp",
+  matrix: "/generated/evidence-matrix.webp",
+  code: "/generated/code-workspace.webp",
+  terminal: "/generated/code-workspace.webp",
+  brief: "/generated/business-memo.webp",
+  calendar: "/generated/experiment-chart.webp"
+};
+
 interface SkillOption {
   id: string;
   label: string;
@@ -386,7 +397,12 @@ function MarkdownText({ text }: { text: string }): ReactElement {
   >{text}</ReactMarkdown></div>;
 }
 
-function ExamplePreviewArt({ visual }: { visual: ExampleVisual }): ReactElement {
+function ExamplePreviewArt({ visual, generated = false }: { visual: ExampleVisual; generated?: boolean }): ReactElement {
+  if (generated) {
+    return <span className={`example-art example-art-generated art-${visual}`} aria-hidden="true">
+      <img className="example-art-media" src={generatedVisualAssets[visual]} alt="" draggable={false} decoding="async" />
+    </span>;
+  }
   if (visual === "research") return <span className="example-art art-research" aria-hidden="true"><span className="art-window"><i /><i /><i /></span><span className="art-sheet"><b /><b /><b /><em /></span><span className="art-pin" /></span>;
   if (visual === "slides") return <span className="example-art art-slides" aria-hidden="true"><span className="art-slide art-slide-back" /><span className="art-slide art-slide-main"><b /><i /><i /><i /></span><span className="art-slide art-slide-front"><b /><i /><i /></span></span>;
   if (visual === "chart") return <span className="example-art art-chart" aria-hidden="true"><span className="art-axis" /><span className="art-line line-one" /><span className="art-line line-two" /><span className="art-bar bar-one" /><span className="art-bar bar-two" /><span className="art-bar bar-three" /><span className="art-bar bar-four" /></span>;
@@ -874,8 +890,8 @@ function ExampleDialogPanel({
         <div className="example-dialog-visual" aria-hidden="true">
           <div className="example-dialog-stage">
             <span className="example-dialog-glow" />
-            <ExamplePreviewArt visual={visual} />
-            <ExamplePreviewArt visual={companionVisuals[visual]} />
+            <ExamplePreviewArt visual={visual} generated />
+            <ExamplePreviewArt visual={companionVisuals[visual]} generated />
           </div>
         </div>
         <div className="example-dialog-body">

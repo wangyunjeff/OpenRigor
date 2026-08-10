@@ -227,6 +227,15 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 
 /* Small result previews keep example cards concrete without importing brand assets. */
 .example-art { position: relative; min-width: 0; overflow: hidden; align-self: center; height: 82px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 11px; background: #171818; box-shadow: 0 8px 18px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.06); }
+.example-art-generated { isolation: isolate; background: #24282a; }
+.example-art-media { position: relative; z-index: 0; display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; user-select: none; }
+.example-art-generated::after { content: ""; position: absolute; z-index: 1; inset: 0; pointer-events: none; border-radius: inherit; background: linear-gradient(135deg, rgba(255,255,255,.1), transparent 38%, rgba(13,16,17,.12)); mix-blend-mode: soft-light; }
+.example-art-generated.art-research .example-art-media { object-position: 54% center; }
+.example-art-generated.art-slides .example-art-media { object-position: center center; }
+.example-art-generated.art-chart .example-art-media { object-position: 55% center; }
+.example-art-generated.art-matrix .example-art-media { object-position: center center; }
+.example-art-generated.art-code .example-art-media, .example-art-generated.art-terminal .example-art-media { object-position: center center; }
+.example-art-generated.art-brief .example-art-media, .example-art-generated.art-calendar .example-art-media { object-position: center center; }
 .example-art span, .example-art i, .example-art b, .example-art em { position: absolute; display: block; }
 .example-art i, .example-art b, .example-art em { border-radius: 2px; background: rgba(237, 234, 225, .3); }
 .art-window { inset: 8px 25px 18px 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 4px; background: #202323; }

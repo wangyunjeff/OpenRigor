@@ -13,5 +13,6 @@ Thumbs.db
 infra/data/
 infra/minio/
 output/playwright/
+output/imagegen/
 .playwright-cli/
 .tmp-npm-playwright/
