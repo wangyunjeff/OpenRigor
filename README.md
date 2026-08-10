@@ -6,6 +6,43 @@ OpenRigor is a clean-room, open-source implementation of a persistent AI-agent w
 
 This repository is the implementation workspace created from the ClawsGO public-product research snapshot. It does not copy ClawsGO code, branding, screenshots, text, or protected visual assets. The goal is behavioral and architectural equivalence where the behavior is publicly observable.
 
+## Product gallery
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/openrigor-home-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/openrigor-home-light.png">
+    <img src="docs/assets/openrigor-home-light.png" alt="OpenRigor desktop-first local agent workspace" width="100%">
+  </picture>
+</p>
+
+<p align="center"><sub>Desktop-first local agent workspace with task templates, generated previews, and a streaming task composer.</sub></p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/openrigor-example-preview-dark.png" alt="OpenRigor task template preview dialog" width="100%">
+      <p><strong>Preview before sending.</strong><br><sub>Open a task template, inspect its generated visual context, and edit the draft before it becomes a run.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/openrigor-routing-dark.png" alt="OpenRigor TokenResearch model and reasoning controls" width="100%">
+      <p><strong>Model and routing controls.</strong><br><sub>Choose Sol, Terra, or Luna, select reasoning depth from Low to Max, and switch between Standard, Ultra, and TokenResearch routing.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/openrigor-run-dark.png" alt="OpenRigor completed task with execution step details" width="100%">
+      <p><strong>Inspectable execution.</strong><br><sub>Follow the run status, expand individual tool steps, and review the returned answer in the same conversation.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/openrigor-home-light.png" alt="OpenRigor light theme workspace" width="100%">
+      <p><strong>Light and dark themes.</strong><br><sub>The gallery includes the same workspace in both themes; the first image follows your GitHub color preference when supported.</sub></p>
+    </td>
+  </tr>
+</table>
+
+> The screenshots show the local single-user alpha. Hosted execution, durable history, and sandbox isolation remain on the roadmap.
+
 ## Current status
 
 - Research baseline: complete. Read [the full technical report](docs/TECHNICAL_REPORT.md) and the focused [cloud runtime architecture report](docs/CLOUD_RUNTIME_ARCHITECTURE.md).
