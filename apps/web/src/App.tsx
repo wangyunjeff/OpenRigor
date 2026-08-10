@@ -7,7 +7,9 @@ import {
   type KeyboardEvent,
   type ReactElement
 } from "react";
+import { useGSAP } from "@gsap/react";
 import type { RunEvent, RunSnapshot } from "@openrigor/protocol";
+import { gsap } from "gsap";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -117,6 +119,8 @@ import {
   toolElapsedMs,
   type RunActivityPresentation
 } from "./run-presentation";
+
+gsap.registerPlugin(useGSAP);
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8787";
 
@@ -455,7 +459,47 @@ function IconTooltip({ label, children }: { label: string; children: ReactElemen
 }
 
 function RunActivityIndicator({ view, status }: { view: RunActivityPresentation; status: RunSnapshot["status"] }): ReactElement {
-  return <div className={`run-activity${view.animated ? " is-animated" : ""}${view.stale ? " is-stale" : ""}`} data-status={status}>
+  const indicatorRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    const root = indicatorRef.current;
+    if (!root) return;
+
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      const intro = gsap.timeline({ defaults: { ease: "power2.out" } });
+      intro
+        .fromTo(root, { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.28, clearProps: "transform,opacity,visibility" })
+        .fromTo(".run-activity-orb", { scale: 0.86 }, { scale: 1, duration: 0.36, ease: "back.out(1.6)", clearProps: "transform" }, "<")
+        .fromTo(".run-activity-copy > *", { autoAlpha: 0, y: 3 }, { autoAlpha: 1, y: 0, duration: 0.24, stagger: 0.045, clearProps: "transform,opacity,visibility" }, "<0.04")
+        .fromTo(".run-activity-meta", { autoAlpha: 0, x: 4 }, { autoAlpha: 1, x: 0, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.05");
+
+      if (!view.animated) return;
+
+      const dots = gsap.utils.toArray<HTMLElement>(".run-activity-orb i", root);
+      gsap.timeline({ repeat: -1, repeatDelay: 0.16 })
+        .to(dots, { opacity: 0.96, scale: 1.24, duration: 0.34, stagger: { each: 0.075, from: "start" }, ease: "sine.out" })
+        .to(dots, { opacity: 0.2, scale: 0.88, duration: 0.46, stagger: { each: 0.075, from: "start" }, ease: "sine.in" }, 0.22);
+
+    }, root);
+
+    return () => media.revert();
+  }, { scope: indicatorRef, dependencies: [view.animated], revertOnUpdate: true });
+
+  useGSAP(() => {
+    const root = indicatorRef.current;
+    if (!root || !view.stale) return;
+
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.timeline({ defaults: { ease: "power2.out" } })
+        .fromTo(".run-activity-copy strong", { autoAlpha: 0.42, x: -3 }, { autoAlpha: 1, x: 0, duration: 0.34, clearProps: "transform,opacity,visibility" });
+    }, root);
+
+    return () => media.revert();
+  }, { scope: indicatorRef, dependencies: [view.stale], revertOnUpdate: true });
+
+  return <div ref={indicatorRef} className={`run-activity${view.animated ? " is-animated" : ""}${view.stale ? " is-stale" : ""}`} data-status={status}>
     <span className="run-activity-orb" aria-hidden="true">
       {Array.from({ length: 9 }, (_, index) => <i key={index} />)}
     </span>
@@ -469,6 +513,7 @@ function RunActivityIndicator({ view, status }: { view: RunActivityPresentation;
 
 function ToolRow({ projection, output, nowMs, active }: { projection: ToolProjection; output: string | undefined; nowMs: number; active: boolean }): ReactElement {
   const phase = projection.event.tool.phase;
+  const rowRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(phase === "failed" || (active && (phase === "requested" || phase === "running")));
   const Icon = toolIcon(projection.event.tool.name);
   const liveDuration = active && (phase === "requested" || phase === "running");
@@ -482,7 +527,41 @@ function ToolRow({ projection, output, nowMs, active }: { projection: ToolProjec
     else setOpen(active);
   }, [active, phase]);
 
-  return <Collapsible className={`activity-row${active ? " is-live" : ""}`} open={open} onOpenChange={setOpen}>
+  useGSAP(() => {
+    const root = rowRef.current;
+    if (!root) return;
+
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.timeline({ defaults: { ease: "power2.out" } })
+        .fromTo(root, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.28, clearProps: "transform,opacity,visibility" })
+        .fromTo(".activity-copy", { autoAlpha: 0, x: -4 }, { autoAlpha: 1, x: 0, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.03");
+    }, root);
+
+    return () => media.revert();
+  }, { scope: rowRef });
+
+  useGSAP(() => {
+    const root = rowRef.current;
+    if (!root) return;
+
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.fromTo(".activity-phase", { autoAlpha: 0, x: 4 }, { autoAlpha: 1, x: 0, duration: 0.24, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+
+      if (liveDuration) {
+        gsap.to(".activity-live-spinner", { rotation: 360, duration: 1.05, repeat: -1, ease: "none" });
+      } else if (phase === "succeeded") {
+        gsap.fromTo(".activity-state svg", { scale: 0.68, rotation: -8 }, { scale: 1, rotation: 0, duration: 0.38, ease: "back.out(1.8)", clearProps: "transform" });
+      } else if (phase === "failed") {
+        gsap.fromTo(".activity-state", { x: -2 }, { x: 0, duration: 0.34, ease: "elastic.out(1, 0.35)", clearProps: "transform" });
+      }
+    }, root);
+
+    return () => media.revert();
+  }, { scope: rowRef, dependencies: [active, phase], revertOnUpdate: true });
+
+  return <Collapsible ref={rowRef} className={`activity-row${active ? " is-live" : ""}`} open={open} onOpenChange={setOpen}>
     <CollapsibleTrigger asChild>
       <button type="button" className="activity-trigger">
         <span className={`activity-state phase-${phase}`}><Icon aria-hidden="true" /></span>
@@ -490,12 +569,33 @@ function ToolRow({ projection, output, nowMs, active }: { projection: ToolProjec
           <strong>{toolLabel(projection.event.tool.name)}</strong>
           {projection.event.tool.inputSummary ? <small>{projection.event.tool.inputSummary}</small> : null}
         </span>
-        <span className={`activity-phase phase-${phase}`}>{duration ?? phaseLabel(phase)}</span>
+        <span className={`activity-phase phase-${phase}`}>{liveDuration ? <i className="activity-live-spinner" aria-hidden="true" /> : null}<span>{duration ?? phaseLabel(phase)}</span></span>
         <ChevronDown className="activity-chevron" aria-hidden="true" />
       </button>
     </CollapsibleTrigger>
     {output ? <CollapsibleContent className="activity-output"><pre>{output}</pre></CollapsibleContent> : null}
   </Collapsible>;
+}
+
+function CompletionLine({ elapsed, updatedAt }: { elapsed: string; updatedAt: string }): ReactElement {
+  const completionRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    const root = completionRef.current;
+    if (!root) return;
+
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.timeline({ defaults: { ease: "power2.out" } })
+        .fromTo(root, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.3, clearProps: "transform,opacity,visibility" })
+        .fromTo(".completion-mark", { scale: 0.58, rotation: -18 }, { scale: 1, rotation: 0, duration: 0.46, ease: "back.out(2)", clearProps: "transform" }, "<0.02")
+        .fromTo(".completion-line strong, .completion-line small", { autoAlpha: 0, x: -4 }, { autoAlpha: 1, x: 0, duration: 0.24, stagger: 0.055, clearProps: "transform,opacity,visibility" }, "<0.08");
+    }, root);
+
+    return () => media.revert();
+  }, { scope: completionRef });
+
+  return <div ref={completionRef} className="completion-line"><span className="completion-mark"><Check aria-hidden="true" /></span><strong>任务完成</strong><small>用时 {elapsed} · {formatTime(updatedAt)}</small></div>;
 }
 
 function ConversationRunTurn({
@@ -555,7 +655,7 @@ function ConversationRunTurn({
       </Collapsible> : null}
 
       {answer ? <div className="answer-block"><MarkdownText text={answer} /><div className="answer-actions"><button type="button" onClick={() => onCopy(run.runId, answer)}><Copy aria-hidden="true" />{copied ? "已复制" : "复制回答"}</button></div></div> : null}
-      {snapshot.status === "completed" ? <div className="completion-line"><span><Check aria-hidden="true" /></span><strong>任务完成</strong><small>用时 {activity.elapsed} · {formatTime(snapshot.updatedAt)}</small></div> : null}
+      {snapshot.status === "completed" ? <CompletionLine elapsed={activity.elapsed} updatedAt={snapshot.updatedAt} /> : null}
     </article>
   </section>;
 }
