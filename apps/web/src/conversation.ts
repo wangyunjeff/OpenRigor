@@ -1,4 +1,4 @@
-import type { RunEvent, RunSnapshot } from "@openrigor/protocol";
+import type { RunEvent, RunSnapshot, UsageSummary } from "@openrigor/protocol";
 
 export type ConversationRunSnapshot = RunSnapshot & {
   conversationId?: string;
@@ -36,6 +36,11 @@ export interface ToolProjection {
   firstIndex: number;
 }
 
+export interface SubagentProjection {
+  event: Extract<RunEvent, { type: "subagent" }>;
+  firstIndex: number;
+}
+
 export interface RunProjection {
   answer: string;
   reasoning: string;
@@ -43,6 +48,9 @@ export interface RunProjection {
   tools: ToolProjection[];
   diffs: Array<Extract<RunEvent, { type: "part" }>>;
   files: Array<Extract<RunEvent, { type: "file" }>>;
+  subagents: SubagentProjection[];
+  errors: Array<Extract<RunEvent, { type: "error" }>>;
+  usage: UsageSummary | undefined;
 }
 
 export function cleanHistoryPrompt(prompt: string): string {
@@ -126,8 +134,11 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
   const reasoningParts = new Map<string, string>();
   const toolOutput = new Map<string, string>();
   const projectedTools = new Map<string, ToolProjection>();
+  const projectedSubagents = new Map<string, SubagentProjection>();
   const diffs: RunProjection["diffs"] = [];
   const files: RunProjection["files"] = [];
+  const errors: RunProjection["errors"] = [];
+  let usage: UsageSummary | undefined;
 
   events.forEach((event, index) => {
     if (event.type === "part-delta") {
@@ -164,7 +175,26 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
       return;
     }
 
-    if (event.type === "file") files.push(event);
+    if (event.type === "file") {
+      files.push(event);
+      return;
+    }
+
+    if (event.type === "subagent") {
+      const existing = projectedSubagents.get(event.subagent.subagentRunId);
+      projectedSubagents.set(event.subagent.subagentRunId, {
+        event,
+        firstIndex: existing?.firstIndex ?? index
+      });
+      return;
+    }
+
+    if (event.type === "error") {
+      errors.push(event);
+      return;
+    }
+
+    if (event.type === "run-finished") usage = event.usage;
   });
 
   return {
@@ -173,7 +203,10 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
     toolOutput,
     tools: [...projectedTools.values()].sort((left, right) => left.firstIndex - right.firstIndex),
     diffs,
-    files
+    files,
+    subagents: [...projectedSubagents.values()].sort((left, right) => left.firstIndex - right.firstIndex),
+    errors,
+    usage
   };
 }
 

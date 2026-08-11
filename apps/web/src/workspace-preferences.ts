@@ -185,6 +185,7 @@ export function applyTheme(theme: ThemePreference): ResolvedTheme {
     document.documentElement.dataset.theme = resolved;
     document.documentElement.dataset.themePreference = theme;
     document.documentElement.style.colorScheme = resolved;
+    document.documentElement.classList.toggle("dark", resolved === "dark");
   }
   return resolved;
 }

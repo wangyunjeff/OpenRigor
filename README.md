@@ -2,7 +2,7 @@
 
 OpenRigor is a clean-room, open-source implementation of a persistent AI-agent workspace: a chat-first product that can plan work, run tools in an isolated workspace, stream progress, survive disconnects, and return inspectable files.
 
-[![CI](https://github.com/wangyunjeff/OpenRigor/actions/workflows/ci.yml/badge.svg)](https://github.com/wangyunjeff/OpenRigor/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) · [Technical report](docs/TECHNICAL_REPORT.md) · [Roadmap](docs/ROADMAP.md)
+[![CI](https://github.com/wangyunjeff/OpenRigor/actions/workflows/ci.yml/badge.svg)](https://github.com/wangyunjeff/OpenRigor/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) · [Technical report](docs/TECHNICAL_REPORT.md) · [Frontend architecture](docs/FRONTEND_ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md)
 
 This repository is the implementation workspace created from the ClawsGO public-product research snapshot. It does not copy ClawsGO code, branding, screenshots, text, or protected visual assets. The goal is behavioral and architectural equivalence where the behavior is publicly observable.
 
@@ -48,6 +48,7 @@ This repository is the implementation workspace created from the ClawsGO public-
 - Research baseline: complete. Read [the full technical report](docs/TECHNICAL_REPORT.md) and the focused [cloud runtime architecture report](docs/CLOUD_RUNTIME_ARCHITECTURE.md).
 - Working local alpha: real Codex app-server execution, streamed answers/reasoning/tools/files, SSE replay, stop/interrupt, and same-thread follow-up turns.
 - Interface: an original desktop-first operator console with preview-before-send examples, Light/Dark/System themes, Codex-style Sol/Terra/Luna and `low` through `max` controls, a separate Ultra multi-agent mode, knowledge and skill selectors, structured reasoning/tool output, and a browser-side recent-task list.
+- Frontend foundation: Vercel AI Elements and shadcn provide the accessible AI interaction primitives, OpenRigor adapters preserve its own `RunEvent` contract, AICSS informs original visual treatments without vendoring restricted source, and GSAP coordinates scoped motion with reduced-motion fallbacks.
 - Scope: one local user and one configured workspace. Recent conversations can restore their complete in-memory run chain, but runs/events are still process-memory only; attachments, approvals, queued follow-ups, and restart-safe server history are not implemented yet.
 - Production execution: intentionally not enabled. A hosted release still needs the durable worker and sandbox boundary described in the architecture docs.
 
@@ -120,4 +121,4 @@ OpenRigor is an independent implementation. Use public behavior and public docum
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Bundled and runtime third-party components retain their own licenses as listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

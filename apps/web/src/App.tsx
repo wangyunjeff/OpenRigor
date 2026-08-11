@@ -3,85 +3,51 @@ import {
   useMemo,
   useRef,
   useState,
-  type FormEvent,
   type KeyboardEvent,
   type ReactElement
 } from "react";
 import { useGSAP } from "@gsap/react";
 import type { RunEvent, RunSnapshot } from "@openrigor/protocol";
 import { gsap } from "gsap";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
-  Activity,
   ArrowDown,
   ArrowUp,
   BookOpen,
-  Bot,
   BrainCircuit,
-  BriefcaseBusiness,
-  Bug,
-  Calendar,
   Check,
-  CheckCircle2,
-  ChevronDown,
   ChevronRight,
   CircleHelp,
-  ClipboardCheck,
   Clock3,
-  Code2,
   Command,
-  Copy,
-  Database,
-  FileCode2,
   FileSpreadsheet,
   FileText,
-  FlaskConical,
   Folder,
-  Gauge,
-  GitCompare,
   Globe2,
   HardDrive,
   Layers3,
   Library,
-  ListTodo,
   Menu,
-  MessageSquare,
   Monitor,
   Moon,
-  AtSign,
   Palette,
-  PenLine,
   Plus,
   Presentation,
-  Radar,
   Search,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   Square,
   Sun,
-  Tags,
-  Target,
   Terminal,
-  User,
   WandSparkles,
   X,
-  Zap,
   type LucideIcon
 } from "lucide-react";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger
-} from "./components/ui/collapsible";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
-  DialogOverlay,
-  DialogPortal,
   DialogTitle
 } from "./components/ui/dialog";
 import {
@@ -89,44 +55,50 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuPortal,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "./components/ui/dropdown-menu";
 import {
+  Tooltip as TooltipRoot,
   TooltipContent,
   TooltipProvider,
-  TooltipRoot,
   TooltipTrigger
 } from "./components/ui/tooltip";
 import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton
+} from "./components/ai-elements/conversation";
+import {
+  PromptInput,
+  PromptInputBody,
+  PromptInputFooter,
+  PromptInputTextarea,
+  PromptInputTools
+} from "./components/ai-elements/prompt-input";
+import { RunTurn } from "./features/chat/run-turn";
+import { ComposerPalette, ExecutionSelector, type ComposerPaletteItem } from "./features/composer";
+import {
+  companionVisuals,
+  ExamplePreviewArt,
+  HomeView,
+  type ExampleTask,
+  type TabId
+} from "./features/home";
+import {
   applyRunEvent,
   cleanHistoryPrompt,
-  projectRunEvents,
   restoreConversation,
   type ConversationRestorePayload,
   type ConversationRunSnapshot,
   type ConversationRunView,
-  type ConversationViewState,
-  type ToolProjection
+  type ConversationViewState
 } from "./conversation";
 import {
-  formatToolDuration,
-  isActivelyWorkingStatus,
-  presentRunActivity,
-  toolElapsedMs,
-  type RunActivityPresentation
-} from "./run-presentation";
-import {
   applyTheme,
-  effortLabel,
-  effortOptions,
   initialThemePreference,
   modelLabel,
-  modelOptions,
-  modelSupportsUltra,
   normalizeModeForModel,
   persistManualExecutionPreference,
   persistRoutingPreference,
@@ -148,42 +120,8 @@ gsap.registerPlugin(useGSAP);
 const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8787";
 
 type ConnectionState = "idle" | "connecting" | "open" | "closed";
-type TabId = "research" | "services" | "engineering" | "marketing" | "management" | "creative";
 type WorkspacePanel = "knowledge" | "agent" | null;
 type ComposerPaletteMode = "skill" | "context" | null;
-type ToolEvent = Extract<RunEvent, { type: "tool" }>;
-
-interface ExampleTask {
-  title: string;
-  description: string;
-  prompt: string;
-  icon: LucideIcon;
-  visual?: ExampleVisual;
-}
-
-type ExampleVisual = "research" | "slides" | "chart" | "matrix" | "code" | "terminal" | "brief" | "calendar";
-
-const companionVisuals: Record<ExampleVisual, ExampleVisual> = {
-  research: "chart",
-  slides: "brief",
-  chart: "matrix",
-  matrix: "research",
-  code: "terminal",
-  terminal: "code",
-  brief: "chart",
-  calendar: "brief"
-};
-
-const generatedVisualAssets: Record<ExampleVisual, string> = {
-  research: "/generated/research-lineage.webp",
-  slides: "/generated/research-storyboard.webp",
-  chart: "/generated/research-trend.webp",
-  matrix: "/generated/evidence-matrix.webp",
-  code: "/generated/code-workspace.webp",
-  terminal: "/generated/code-workspace.webp",
-  brief: "/generated/business-memo.webp",
-  calendar: "/generated/experiment-chart.webp"
-};
 
 interface SkillOption {
   id: string;
@@ -247,15 +185,6 @@ function createClientRequestId(): string {
   return `web_${uuid ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;
 }
 
-const tabs: Array<{ id: TabId; label: string }> = [
-  { id: "research", label: "科研学术" },
-  { id: "services", label: "专业服务" },
-  { id: "engineering", label: "工程开发" },
-  { id: "marketing", label: "运营市场" },
-  { id: "management", label: "经营管理" },
-  { id: "creative", label: "创意创作" }
-];
-
 const skillOptions: SkillOption[] = [
   { id: "browser", label: "浏览器", description: "检查网页与交互状态", icon: Globe2 },
   { id: "frontend-design", label: "前端设计", description: "优化产品界面与体验", icon: Palette },
@@ -284,60 +213,10 @@ const themeIcons: Record<ThemePreference, LucideIcon> = {
   system: Monitor
 };
 
-const examples: Record<TabId, ExampleTask[]> = {
-  research: [
-    { title: "梳理一组论文", description: "提炼研究脉络、方法差异和可验证空白。", prompt: "请检索并梳理这个方向近三年的代表性论文，给出方法对比、证据来源和下一步研究机会。", icon: BookOpen, visual: "research" },
-    { title: "准备组会汇报", description: "把材料变成结构清晰、可讲述的演示提纲。", prompt: "请阅读当前工作区的论文材料，整理成一份 15 分钟组会汇报提纲，并标注关键图表。", icon: FileText, visual: "slides" },
-    { title: "复核实验结果", description: "检查数据、脚本和结论之间是否一致。", prompt: "请检查项目中的实验脚本和结果，找出可复现性风险，并提出最小修正方案。", icon: FlaskConical, visual: "chart" },
-    { title: "搭建文献矩阵", description: "按问题、数据、指标和限制组织阅读记录。", prompt: "请为这批文献建立一个可持续更新的阅读矩阵，包含问题、数据、指标、结论和局限。", icon: Database, visual: "matrix" }
-  ],
-  services: [
-    { title: "审阅一份合同", description: "标出风险条款、缺失项和待确认问题。", prompt: "请审阅工作区中的合同，按风险等级列出条款问题、影响和建议修改。", icon: ShieldCheck, visual: "brief" },
-    { title: "做一份尽调摘要", description: "把公开材料压缩成有引用的决策备忘录。", prompt: "请对目标公司做一份尽调摘要，区分已验证事实、推断和待确认信息。", icon: Search, visual: "research" },
-    { title: "整理客户访谈", description: "从访谈记录中提取需求、异议和行动项。", prompt: "请整理当前目录的客户访谈记录，提取共性需求、异议、证据和待办事项。", icon: MessageSquare, visual: "matrix" },
-    { title: "生成服务方案", description: "从目标和约束出发形成可执行交付计划。", prompt: "请根据这份需求说明生成服务方案、交付里程碑、风险和报价假设。", icon: BriefcaseBusiness, visual: "slides" }
-  ],
-  engineering: [
-    { title: "搭建一个原型", description: "从需求开始，交付可运行的最小版本。", prompt: "请先检查当前项目，然后实现需求中最小可运行的切片，并说明验证步骤。", icon: Code2, visual: "code" },
-    { title: "定位一个 bug", description: "复现问题、找到根因并给出可审阅修复。", prompt: "请检查项目中最近的错误日志和相关代码，定位根因，提出并验证一个小范围修复。", icon: Bug, visual: "terminal" },
-    { title: "整理技术债", description: "按影响和成本排列真正值得处理的事项。", prompt: "请审计当前代码库的技术债，按用户影响、风险和工作量排序，给出执行顺序。", icon: ListTodo, visual: "matrix" },
-    { title: "补齐测试", description: "围绕关键行为补测试并运行验证。", prompt: "请找出当前项目最重要的未覆盖行为，补上聚焦测试并运行相关检查。", icon: CheckCircle2, visual: "terminal" }
-  ],
-  marketing: [
-    { title: "扫描竞品", description: "比较定位、功能、价格和证据强弱。", prompt: "请对这几个竞品做一份证据驱动的对比，覆盖定位、功能、价格和差异化机会。", icon: Radar, visual: "research" },
-    { title: "设计内容计划", description: "把业务目标拆成可执行的内容节奏。", prompt: "请根据业务目标制定四周内容计划，包含主题、渠道、负责人和衡量指标。", icon: Calendar, visual: "calendar" },
-    { title: "分析用户反馈", description: "聚合反馈主题，区分信号和噪声。", prompt: "请分析工作区中的用户反馈，聚类主题，标出证据和优先级建议。", icon: MessageSquare, visual: "chart" },
-    { title: "准备发布清单", description: "在发布前检查内容、链接和风险。", prompt: "请为这次发布创建一份可执行的检查清单，并指出缺失材料。", icon: ClipboardCheck, visual: "brief" }
-  ],
-  management: [
-    { title: "整理经营数据", description: "把分散数据变成可讨论的经营视图。", prompt: "请检查当前经营数据，整理关键指标、异常和需要管理层决定的问题。", icon: Gauge, visual: "chart" },
-    { title: "写决策备忘录", description: "清晰呈现选项、取舍和建议。", prompt: "请把这些材料整理成一份决策备忘录，明确选项、取舍、风险和建议。", icon: FileText, visual: "brief" },
-    { title: "规划季度目标", description: "把方向拆成可追踪的结果和节奏。", prompt: "请根据现有目标制定季度计划，包含结果指标、依赖关系和复盘节奏。", icon: Target, visual: "calendar" },
-    { title: "准备会议材料", description: "让会议聚焦事实、选择和行动。", prompt: "请把这批材料整理成会议议程、背景摘要、决策问题和会后行动项。", icon: Calendar, visual: "slides" }
-  ],
-  creative: [
-    { title: "构思一个故事", description: "从主题和受众出发形成完整创意。", prompt: "请围绕这个主题提出三个故事方向，并展开最有潜力的一版。", icon: WandSparkles, visual: "research" },
-    { title: "制作视觉脚本", description: "把想法转成可拍摄、可制作的镜头表。", prompt: "请把这个创意整理成视觉脚本，包含镜头、旁白、节奏和素材需求。", icon: Palette, visual: "slides" },
-    { title: "润色一篇文章", description: "保留观点，改善结构、语气和可读性。", prompt: "请在不改变事实和观点的前提下润色这篇文章，并列出重要改动。", icon: PenLine, visual: "research" },
-    { title: "做一套命名方案", description: "给出有理由、可筛选的命名候选。", prompt: "请为这个产品提出一组命名候选，说明含义、语气和潜在风险。", icon: Tags, visual: "matrix" }
-  ]
-};
-
 const eventTypes: RunEvent["type"][] = ["snapshot", "status", "part", "part-delta", "tool", "file", "subagent", "run-finished", "error"];
 
 function formatTime(value: string): string {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function compactId(value: string): string {
-  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-5)}` : value;
-}
-
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 11) return "早上好，Jeff";
-  if (hour < 18) return "下午好，Jeff";
-  return "晚上好，Jeff";
 }
 
 function statusLabel(status: RunSnapshot["status"]): string {
@@ -358,194 +237,6 @@ function isTerminalStatus(status: RunSnapshot["status"]): boolean {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
-function useLiveNow(enabled: boolean, resetKey: string): number {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    setNowMs(Date.now());
-    if (!enabled) return;
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [enabled, resetKey]);
-
-  return nowMs;
-}
-
-function phaseLabel(phase: ToolEvent["tool"]["phase"]): string {
-  if (phase === "succeeded") return "完成";
-  if (phase === "failed") return "失败";
-  if (phase === "running") return "运行中";
-  return "准备中";
-}
-
-function toolLabel(name: string): string {
-  const normalized = name.toLowerCase();
-  if (normalized.includes("command") || normalized.includes("shell") || normalized.includes("bash")) return "运行命令";
-  if (normalized.includes("write") || normalized.includes("edit")) return "更新文件";
-  if (normalized.includes("read") || normalized.includes("file")) return "读取文件";
-  if (normalized.includes("search") || normalized.includes("grep") || normalized.includes("glob")) return "检索资料";
-  if (normalized.includes("browser") || normalized.includes("web")) return "浏览网页";
-  if (normalized.includes("subagent") || normalized.includes("task")) return "委派子任务";
-  return name.replaceAll("_", " ").replaceAll(".", " · ");
-}
-
-function toolIcon(name: string): LucideIcon {
-  const normalized = name.toLowerCase();
-  if (normalized.includes("command") || normalized.includes("shell") || normalized.includes("bash")) return Terminal;
-  if (normalized.includes("file") || normalized.includes("read") || normalized.includes("write") || normalized.includes("edit")) return FileCode2;
-  if (normalized.includes("search") || normalized.includes("browser") || normalized.includes("web")) return Globe2;
-  if (normalized.includes("subagent") || normalized.includes("task")) return Bot;
-  return Zap;
-}
-
-function MarkdownText({ text }: { text: string }): ReactElement {
-  return <div className="markdown"><ReactMarkdown
-    remarkPlugins={[remarkGfm]}
-    components={{ a: ({ ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}
-  >{text}</ReactMarkdown></div>;
-}
-
-function ExamplePreviewArt({ visual, generated = false }: { visual: ExampleVisual; generated?: boolean }): ReactElement {
-  if (generated) {
-    return <span className={`example-art example-art-generated art-${visual}`} aria-hidden="true">
-      <img className="example-art-media" src={generatedVisualAssets[visual]} alt="" draggable={false} decoding="async" />
-    </span>;
-  }
-  if (visual === "research") return <span className="example-art art-research" aria-hidden="true"><span className="art-window"><i /><i /><i /></span><span className="art-sheet"><b /><b /><b /><em /></span><span className="art-pin" /></span>;
-  if (visual === "slides") return <span className="example-art art-slides" aria-hidden="true"><span className="art-slide art-slide-back" /><span className="art-slide art-slide-main"><b /><i /><i /><i /></span><span className="art-slide art-slide-front"><b /><i /><i /></span></span>;
-  if (visual === "chart") return <span className="example-art art-chart" aria-hidden="true"><span className="art-axis" /><span className="art-line line-one" /><span className="art-line line-two" /><span className="art-bar bar-one" /><span className="art-bar bar-two" /><span className="art-bar bar-three" /><span className="art-bar bar-four" /></span>;
-  if (visual === "matrix") return <span className="example-art art-matrix" aria-hidden="true"><span className="matrix-head"><i /><i /><i /><i /></span><span className="matrix-row"><i /><i /><i /><i /></span><span className="matrix-row"><i /><i /><i /><i /></span><span className="matrix-row"><i /><i /><i /><i /></span><span className="matrix-row"><i /><i /><i /><i /></span></span>;
-  if (visual === "code") return <span className="example-art art-code" aria-hidden="true"><span className="code-rail"><i /><i /><i /><i /></span><span className="code-lines"><i /><i /><i /><i /><i /><i /></span><span className="code-card"><b /><i /><i /></span></span>;
-  if (visual === "terminal") return <span className="example-art art-terminal" aria-hidden="true"><span className="terminal-head"><b /><b /><b /></span><span className="terminal-copy"><i /><i /><i /><i /></span><span className="terminal-cursor" /></span>;
-  if (visual === "calendar") return <span className="example-art art-calendar" aria-hidden="true"><span className="calendar-head"><b /><i /><i /></span><span className="calendar-grid"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></span></span>;
-  return <span className="example-art art-brief" aria-hidden="true"><span className="brief-ring" /><span className="brief-lines"><i /><i /><i /><i /></span><span className="brief-chip" /></span>;
-}
-
-function ExampleCard({ example, onOpen }: { example: ExampleTask; onOpen: (example: ExampleTask, trigger: HTMLButtonElement) => void }): ReactElement {
-  const cardRef = useRef<HTMLButtonElement>(null);
-  const { contextSafe } = useGSAP({ scope: cardRef });
-
-  const animateHover = contextSafe(() => {
-    const root = cardRef.current;
-    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const stack = root.querySelector<HTMLElement>(".example-art-stack");
-    const media = Array.from(root.querySelectorAll<HTMLElement>(".example-art-stack .example-art-media"));
-    const targets = [root, stack, ...media].filter((target): target is HTMLElement => Boolean(target));
-    gsap.killTweensOf(targets);
-    gsap.to(root, { y: -1, duration: 0.16, ease: "power2.out", overwrite: "auto" });
-    if (stack) gsap.to(stack, { y: -2, scale: 1.012, duration: 0.2, ease: "power2.out", overwrite: "auto" });
-    gsap.fromTo(media, { autoAlpha: 0.58, y: 3 }, { autoAlpha: 1, y: 0, duration: 0.22, stagger: 0.018, ease: "power2.out", overwrite: "auto", clearProps: "transform,opacity,visibility" });
-  });
-
-  const animatePointerHover = contextSafe(() => {
-    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-    animateHover();
-  });
-
-  const resetHover = contextSafe(() => {
-    const root = cardRef.current;
-    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const stack = root.querySelector<HTMLElement>(".example-art-stack");
-    const media = Array.from(root.querySelectorAll<HTMLElement>(".example-art-stack .example-art-media"));
-    const targets = [root, stack, ...media].filter((target): target is HTMLElement => Boolean(target));
-    gsap.killTweensOf(targets);
-    gsap.set(media, { clearProps: "transform,opacity,visibility" });
-    gsap.to(root, { y: 0, duration: 0.26, ease: "power3.out", overwrite: "auto", clearProps: "transform" });
-    if (stack) gsap.to(stack, { y: 0, scale: 1, duration: 0.28, ease: "power3.out", overwrite: "auto", clearProps: "transform" });
-  });
-
-  const resetPointerHover = contextSafe(() => {
-    const root = cardRef.current;
-    if (!root || !window.matchMedia("(hover: hover) and (pointer: fine)").matches || root.matches(":focus-visible")) return;
-    resetHover();
-  });
-
-  const pressCard = contextSafe(() => {
-    const root = cardRef.current;
-    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    gsap.to(root, { scale: 0.996, duration: 0.09, ease: "power1.out", overwrite: "auto" });
-  });
-
-  const releaseCard = contextSafe(() => {
-    const root = cardRef.current;
-    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    gsap.to(root, { scale: 1, duration: 0.16, ease: "power2.out", overwrite: "auto" });
-  });
-
-  const Icon = example.icon;
-  const visual = example.visual ?? "research";
-  return <button
-    ref={cardRef}
-    type="button"
-    className="example-card"
-    onClick={(event) => onOpen(example, event.currentTarget)}
-    onPointerEnter={animatePointerHover}
-    onPointerLeave={resetPointerHover}
-    onPointerDown={pressCard}
-    onPointerUp={releaseCard}
-    onPointerCancel={releaseCard}
-    onFocus={animateHover}
-    onBlur={resetHover}
-    aria-label={`预览案例：${example.title}`}
-  >
-    <span className="example-body"><span className="example-kicker"><Icon aria-hidden="true" />工作流</span><strong>{example.title}</strong><span>{example.description}</span></span>
-    <span className="example-art-stack" aria-hidden="true">
-      <ExamplePreviewArt visual={companionVisuals[visual]} generated />
-      <ExamplePreviewArt visual={visual} generated />
-    </span>
-  </button>;
-}
-
-function LaunchView({ activeTab, onTabChange, onOpenExample }: { activeTab: TabId; onTabChange: (tab: TabId) => void; onOpenExample: (example: ExampleTask, trigger: HTMLButtonElement) => void }): ReactElement {
-  const launchRef = useRef<HTMLElement>(null);
-  const previousActiveTab = useRef(activeTab);
-  const activeExamples = examples[activeTab];
-
-  useGSAP(() => {
-    const root = launchRef.current;
-    if (!root) return;
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.timeline({ defaults: { ease: "power2.out" } })
-        .fromTo(".launch-inner h1", { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.36, ease: "power3.out", clearProps: "transform,opacity,visibility" })
-        .fromTo(".workspace-context", { autoAlpha: 0, y: 5, scale: 0.98 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.08")
-        .fromTo(".category-tabs", { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.05")
-        .fromTo(".example-card", { autoAlpha: 0, y: 9, scale: 0.992 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.28, stagger: 0.045, clearProps: "transform,opacity,visibility" }, "<0.04");
-    }, root);
-    return () => media.revert();
-  }, { scope: launchRef });
-
-  useGSAP(() => {
-    const root = launchRef.current;
-    if (!root) return;
-    if (previousActiveTab.current === activeTab) return;
-    previousActiveTab.current = activeTab;
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.fromTo(".category-tab.selected", { scale: 0.96 }, { scale: 1, duration: 0.2, ease: "power2.out", clearProps: "transform" });
-      gsap.fromTo(".example-card", { autoAlpha: 0, y: 8, scale: 0.994 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.26, stagger: 0.035, ease: "power2.out", clearProps: "transform,opacity,visibility" });
-    }, root);
-    return () => media.revert();
-  }, { scope: launchRef, dependencies: [activeTab], revertOnUpdate: true });
-
-  return <section ref={launchRef} className="launch-view">
-    <div className="launch-inner">
-      <h1>{greeting()}</h1>
-      <div className="workspace-context"><Folder aria-hidden="true" /><span>OpenRigor</span><small>main</small></div>
-      <div className="category-tabs" role="tablist" aria-label="任务分类">{tabs.map((tab, index) => <button id={`task-tab-${tab.id}`} key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls="task-examples" tabIndex={activeTab === tab.id ? 0 : -1} className={activeTab === tab.id ? "category-tab selected" : "category-tab"} onClick={() => onTabChange(tab.id)} onKeyDown={(event) => {
-        if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-        event.preventDefault();
-        const offset = event.key === "ArrowRight" ? 1 : -1;
-        const next = tabs[(index + offset + tabs.length) % tabs.length];
-        if (!next) return;
-        onTabChange(next.id);
-        window.setTimeout(() => document.getElementById(`task-tab-${next.id}`)?.focus(), 0);
-      }}>{tab.label}</button>)}</div>
-      <div id="task-examples" className="example-grid" role="tabpanel" tabIndex={0} aria-labelledby={`task-tab-${activeTab}`}>{activeExamples.map((example) => <ExampleCard key={example.title} example={example} onOpen={onOpenExample} />)}</div>
-    </div>
-  </section>;
-}
-
 function ComposerChip({ icon: Icon, label, onRemove }: { icon: LucideIcon; label: string; onRemove: () => void }): ReactElement {
   const chipRef = useRef<HTMLButtonElement>(null);
   useGSAP(() => {
@@ -562,7 +253,7 @@ function useDialogEntrance(open: boolean, rootRef: { current: HTMLDivElement | n
     if (!root || !open) return;
     const media = gsap.matchMedia();
     media.add("(prefers-reduced-motion: no-preference)", () => {
-      const overlay = root.parentElement?.querySelector<HTMLElement>(".dialog-overlay");
+      const overlay = root.parentElement?.querySelector<HTMLElement>('[data-slot="dialog-overlay"]');
       const timeline = gsap.timeline({ defaults: { ease: "power2.out" } });
       if (overlay) timeline.fromTo(overlay, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, 0);
       timeline
@@ -571,74 +262,6 @@ function useDialogEntrance(open: boolean, rootRef: { current: HTMLDivElement | n
     }, root);
     return () => media.revert();
   }, { scope: rootRef, dependencies: [open, key], revertOnUpdate: true });
-}
-
-interface ComposerPaletteItem {
-  id: string;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-  kind: "skill" | "context";
-  path?: string;
-}
-
-function ComposerPalette({
-  open,
-  mode,
-  items,
-  activeIndex,
-  selected,
-  onSelect
-}: {
-  open: boolean;
-  mode: "skill" | "context" | null;
-  items: ComposerPaletteItem[];
-  activeIndex: number;
-  selected: string[];
-  onSelect: (item: ComposerPaletteItem) => void;
-}): ReactElement | null {
-  const paletteRef = useRef<HTMLDivElement>(null);
-  useGSAP(() => {
-    const root = paletteRef.current;
-    if (!root || !open || !mode) return;
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.timeline({ defaults: { ease: "power2.out" } })
-        .fromTo(root, { autoAlpha: 0, y: 7, scale: 0.992 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.16, clearProps: "transform,opacity,visibility" })
-        .fromTo(".composer-command-header, .composer-command-item, .composer-command-footer", { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.13, stagger: 0.022, clearProps: "transform,opacity,visibility" }, "<0.02");
-    }, root);
-    return () => media.revert();
-  }, { scope: paletteRef, dependencies: [open, mode], revertOnUpdate: true });
-  useEffect(() => {
-    if (!open) return;
-    paletteRef.current?.querySelector<HTMLElement>(".composer-command-item.highlighted")?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, items.length, open]);
-
-  if (!open || !mode) return null;
-  const HeaderIcon = mode === "skill" ? Layers3 : AtSign;
-  return <div ref={paletteRef} className="composer-command-menu" role="listbox" aria-label={mode === "skill" ? "选择技能" : "选择上下文"}>
-    <div className="composer-command-header"><span><HeaderIcon aria-hidden="true" />{mode === "skill" ? "技能" : "上下文"}</span><kbd>{mode === "skill" ? "/" : "@"}</kbd></div>
-    <div className="composer-command-list">
-      {items.length ? items.map((item, index) => {
-        const Icon = item.icon;
-        const active = selected.includes(item.id);
-        return <button
-          type="button"
-          role="option"
-          aria-selected={active}
-          className={index === activeIndex ? "composer-command-item highlighted" : "composer-command-item"}
-          key={item.id}
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={() => onSelect(item)}
-        >
-          <span className="composer-command-icon"><Icon aria-hidden="true" /></span>
-          <span className="composer-command-copy"><strong>{item.label}</strong><small>{item.description}</small>{item.path ? <code>{item.path}</code> : null}</span>
-          <span className={active ? "composer-command-check selected" : "composer-command-check"}>{active ? <Check aria-hidden="true" /> : <kbd>{index + 1}</kbd>}</span>
-        </button>;
-      }) : <div className="composer-command-empty">没有匹配的选项</div>}
-    </div>
-    <div className="composer-command-footer"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>Enter</kbd>添加</span></div>
-  </div>;
 }
 
 function BrandMark(): ReactElement {
@@ -650,208 +273,6 @@ function IconTooltip({ label, children }: { label: string; children: ReactElemen
     <TooltipTrigger asChild>{children}</TooltipTrigger>
     <TooltipContent className="radix-tooltip" sideOffset={7}>{label}</TooltipContent>
   </TooltipRoot>;
-}
-
-function RunActivityIndicator({ view, status }: { view: RunActivityPresentation; status: RunSnapshot["status"] }): ReactElement {
-  const indicatorRef = useRef<HTMLDivElement>(null);
-
-  useGSAP(() => {
-    const root = indicatorRef.current;
-    if (!root) return;
-
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      const intro = gsap.timeline({ defaults: { ease: "power2.out" } });
-      intro
-        .fromTo(root, { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.28, clearProps: "transform,opacity,visibility" })
-        .fromTo(".run-activity-orb", { scale: 0.86 }, { scale: 1, duration: 0.36, ease: "back.out(1.6)", clearProps: "transform" }, "<")
-        .fromTo(".run-activity-copy > *", { autoAlpha: 0, y: 3 }, { autoAlpha: 1, y: 0, duration: 0.24, stagger: 0.045, clearProps: "transform,opacity,visibility" }, "<0.04")
-        .fromTo(".run-activity-meta", { autoAlpha: 0, x: 4 }, { autoAlpha: 1, x: 0, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.05");
-
-      if (!view.animated) return;
-
-      const dots = gsap.utils.toArray<HTMLElement>(".run-activity-orb i", root);
-      gsap.timeline({ repeat: -1, repeatDelay: 0.16 })
-        .to(dots, { opacity: 0.96, scale: 1.24, duration: 0.34, stagger: { each: 0.075, from: "start" }, ease: "sine.out" })
-        .to(dots, { opacity: 0.2, scale: 0.88, duration: 0.46, stagger: { each: 0.075, from: "start" }, ease: "sine.in" }, 0.22);
-
-    }, root);
-
-    return () => media.revert();
-  }, { scope: indicatorRef, dependencies: [view.animated], revertOnUpdate: true });
-
-  useGSAP(() => {
-    const root = indicatorRef.current;
-    if (!root || !view.stale) return;
-
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.timeline({ defaults: { ease: "power2.out" } })
-        .fromTo(".run-activity-copy strong", { autoAlpha: 0.42, x: -3 }, { autoAlpha: 1, x: 0, duration: 0.34, clearProps: "transform,opacity,visibility" });
-    }, root);
-
-    return () => media.revert();
-  }, { scope: indicatorRef, dependencies: [view.stale], revertOnUpdate: true });
-
-  return <div ref={indicatorRef} className={`run-activity${view.animated ? " is-animated" : ""}${view.stale ? " is-stale" : ""}`} data-status={status}>
-    <span className="run-activity-orb" aria-hidden="true">
-      {Array.from({ length: 9 }, (_, index) => <i key={index} />)}
-    </span>
-    <span className="run-activity-copy">
-      <strong role="status" aria-live="polite">{view.headline}</strong>
-      <small>{view.detail}</small>
-    </span>
-    <span className="run-activity-meta" aria-hidden="true"><span>已用时 {view.elapsed}</span><i>·</i><span>{view.lastUpdate}</span></span>
-  </div>;
-}
-
-function ToolRow({ projection, output, nowMs, active }: { projection: ToolProjection; output: string | undefined; nowMs: number; active: boolean }): ReactElement {
-  const phase = projection.event.tool.phase;
-  const rowRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(phase === "failed" || (active && (phase === "requested" || phase === "running")));
-  const Icon = toolIcon(projection.event.tool.name);
-  const liveDuration = active && (phase === "requested" || phase === "running");
-  const duration = phase === "requested" && !liveDuration
-    ? null
-    : formatToolDuration(toolElapsedMs(projection.firstAt, projection.lastAt, liveDuration, nowMs));
-
-  useEffect(() => {
-    if (phase === "failed") setOpen(true);
-    else if (phase === "succeeded") setOpen(false);
-    else setOpen(active);
-  }, [active, phase]);
-
-  useGSAP(() => {
-    const root = rowRef.current;
-    if (!root) return;
-
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.timeline({ defaults: { ease: "power2.out" } })
-        .fromTo(root, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.28, clearProps: "transform,opacity,visibility" })
-        .fromTo(".activity-copy", { autoAlpha: 0, x: -4 }, { autoAlpha: 1, x: 0, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.03");
-    }, root);
-
-    return () => media.revert();
-  }, { scope: rowRef });
-
-  useGSAP(() => {
-    const root = rowRef.current;
-    if (!root) return;
-
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.fromTo(".activity-phase", { autoAlpha: 0, x: 4 }, { autoAlpha: 1, x: 0, duration: 0.24, ease: "power2.out", clearProps: "transform,opacity,visibility" });
-
-      if (liveDuration) {
-        gsap.to(".activity-live-spinner", { rotation: 360, duration: 1.05, repeat: -1, ease: "none" });
-      } else if (phase === "succeeded") {
-        gsap.fromTo(".activity-state svg", { scale: 0.68, rotation: -8 }, { scale: 1, rotation: 0, duration: 0.38, ease: "back.out(1.8)", clearProps: "transform" });
-      } else if (phase === "failed") {
-        gsap.fromTo(".activity-state", { x: -2 }, { x: 0, duration: 0.34, ease: "elastic.out(1, 0.35)", clearProps: "transform" });
-      }
-    }, root);
-
-    return () => media.revert();
-  }, { scope: rowRef, dependencies: [active, phase], revertOnUpdate: true });
-
-  return <Collapsible ref={rowRef} className={`activity-row${active ? " is-live" : ""}`} open={open} onOpenChange={setOpen}>
-    <CollapsibleTrigger asChild>
-      <button type="button" className="activity-trigger">
-        <span className={`activity-state phase-${phase}`}><Icon aria-hidden="true" /></span>
-        <span className="activity-copy">
-          <strong>{toolLabel(projection.event.tool.name)}</strong>
-          {projection.event.tool.inputSummary ? <small>{projection.event.tool.inputSummary}</small> : null}
-        </span>
-        <span className={`activity-phase phase-${phase}`}>{liveDuration ? <i className="activity-live-spinner" aria-hidden="true" /> : null}<span>{duration ?? phaseLabel(phase)}</span></span>
-        <ChevronDown className="activity-chevron" aria-hidden="true" />
-      </button>
-    </CollapsibleTrigger>
-    {output ? <CollapsibleContent className="activity-output"><pre>{output}</pre></CollapsibleContent> : null}
-  </Collapsible>;
-}
-
-function CompletionLine({ elapsed, updatedAt }: { elapsed: string; updatedAt: string }): ReactElement {
-  const completionRef = useRef<HTMLDivElement>(null);
-
-  useGSAP(() => {
-    const root = completionRef.current;
-    if (!root) return;
-
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.timeline({ defaults: { ease: "power2.out" } })
-        .fromTo(root, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.3, clearProps: "transform,opacity,visibility" })
-        .fromTo(".completion-mark", { scale: 0.58, rotation: -18 }, { scale: 1, rotation: 0, duration: 0.46, ease: "back.out(2)", clearProps: "transform" }, "<0.02")
-        .fromTo(".completion-line strong, .completion-line small", { autoAlpha: 0, x: -4 }, { autoAlpha: 1, x: 0, duration: 0.24, stagger: 0.055, clearProps: "transform,opacity,visibility" }, "<0.08");
-    }, root);
-
-    return () => media.revert();
-  }, { scope: completionRef });
-
-  return <div ref={completionRef} className="completion-line"><span className="completion-mark"><Check aria-hidden="true" /></span><strong>任务完成</strong><small>用时 {elapsed} · {formatTime(updatedAt)}</small></div>;
-}
-
-function ConversationRunTurn({
-  run,
-  copied,
-  onCopy,
-  connection
-}: {
-  run: ConversationRunView;
-  copied: boolean;
-  onCopy: (runId: string, answer: string) => void;
-  connection: ConnectionState;
-}): ReactElement {
-  const { answer, reasoning, toolOutput, tools, diffs, files } = useMemo(() => projectRunEvents(run.events), [run.events]);
-  const snapshot = run.snapshot;
-  const isRunning = !isTerminalStatus(snapshot.status);
-  const isWorking = isActivelyWorkingStatus(snapshot.status);
-  const nowMs = useLiveNow(isRunning, snapshot.runId);
-  const latestEventAt = run.events.at(-1)?.ts ?? snapshot.updatedAt;
-  const activity = presentRunActivity(snapshot, latestEventAt, nowMs);
-  const visibleActivity: RunActivityPresentation = connection === "open"
-    ? activity
-    : connection === "connecting"
-      ? { ...activity, animated: true, stale: false, headline: "正在恢复实时状态", detail: "正在重新连接事件流" }
-      : { ...activity, animated: false, stale: false, headline: "实时状态未连接", detail: "任务可能仍在后台运行" };
-  const [reasoningOpen, setReasoningOpen] = useState(isRunning);
-  const [executionOpen, setExecutionOpen] = useState(isRunning);
-  const activityCount = tools.length + files.length + diffs.length + (reasoning ? 1 : 0);
-
-  useEffect(() => {
-    setExecutionOpen(isRunning);
-    setReasoningOpen(isRunning);
-  }, [isRunning]);
-
-  return <section className="conversation-turn" data-run-id={run.runId}>
-    <article className="user-turn">
-      <div className="user-bubble">{run.visiblePrompt}</div>
-      <div className="turn-meta"><span>{formatTime(snapshot.createdAt)}</span><span>{modelLabel(snapshot.model)}</span></div>
-    </article>
-
-    <article className="assistant-turn">
-      <div className="assistant-heading"><span className="assistant-mark"><Command aria-hidden="true" /></span><span><strong>OpenRigor</strong><small className={`run-status status-${snapshot.status}`}><span />{statusLabel(snapshot.status)}</small></span><code>{compactId(snapshot.runId)}</code></div>
-
-      {isRunning ? <RunActivityIndicator view={visibleActivity} status={snapshot.status} /> : null}
-
-      {activityCount ? <Collapsible className="execution-group" open={executionOpen} onOpenChange={setExecutionOpen}>
-        <CollapsibleTrigger asChild><button type="button" className="execution-summary"><Activity aria-hidden="true" /><span>{isWorking ? `正在执行 · ${activityCount} 个步骤` : snapshot.status === "waiting_user" ? `等待继续 · ${activityCount} 个步骤` : `执行了 ${activityCount} 个步骤`}</span><small>{snapshot.progress}%</small><ChevronDown aria-hidden="true" /></button></CollapsibleTrigger>
-        <CollapsibleContent className="execution-content">
-          {reasoning ? <Collapsible className="activity-row reasoning-row" open={reasoningOpen} onOpenChange={setReasoningOpen}>
-            <CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state reasoning-state"><BrainCircuit aria-hidden="true" /></span><span className="activity-copy"><strong>深度思考</strong><small>{snapshot.currentStep ?? "分析任务与工作区"}</small></span><span className="activity-phase">{isWorking ? "进行中" : snapshot.status === "waiting_user" ? "等待" : "完成"}</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger>
-            <CollapsibleContent className="reasoning-copy">{reasoning}</CollapsibleContent>
-          </Collapsible> : null}
-          {tools.map((projection) => <ToolRow key={projection.event.tool.callId} projection={projection} output={projection.event.tool.outputSummary ?? toolOutput.get(projection.event.tool.callId)} nowMs={nowMs} active={isWorking && connection === "open"} />)}
-          {files.map((event) => <div className="activity-row artifact-row" key={event.eventId}><span className="activity-state file-state"><FileCode2 aria-hidden="true" /></span><span className="activity-copy"><strong>生成文件</strong><small>{event.file.name}</small></span><span className="activity-phase">修订 {event.file.revision}</span></div>)}
-          {diffs.map((event) => <Collapsible className="activity-row" key={event.eventId}><CollapsibleTrigger asChild><button type="button" className="activity-trigger"><span className="activity-state diff-state"><GitCompare aria-hidden="true" /></span><span className="activity-copy"><strong>文件变更</strong><small>{event.part.partId.replace("diff:", "")}</small></span><span className="activity-phase">查看差异</span><ChevronDown className="activity-chevron" aria-hidden="true" /></button></CollapsibleTrigger><CollapsibleContent className="activity-output"><pre>{event.part.text}</pre></CollapsibleContent></Collapsible>)}
-        </CollapsibleContent>
-      </Collapsible> : null}
-
-      {answer ? <div className="answer-block"><MarkdownText text={answer} /><div className="answer-actions"><button type="button" onClick={() => onCopy(run.runId, answer)}><Copy aria-hidden="true" />{copied ? "已复制" : "复制回答"}</button></div></div> : null}
-      {snapshot.status === "completed" ? <CompletionLine elapsed={activity.elapsed} updatedAt={snapshot.updatedAt} /> : null}
-    </article>
-  </section>;
 }
 
 function ExampleDialogPanel({
@@ -899,7 +320,7 @@ function ExampleDialogPanel({
     return () => media.revert();
   }, { scope: contentRef, dependencies: [visual], revertOnUpdate: true });
 
-  return <DialogContent ref={contentRef} className="dialog-content example-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
+  return <DialogContent ref={contentRef} className="dialog-content example-dialog" showCloseButton={false} onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
         <DialogClose asChild><button type="button" className="dialog-close example-dialog-close" aria-label="关闭"><X aria-hidden="true" /></button></DialogClose>
         <div className="example-dialog-visual" aria-hidden="true">
           <div className="example-dialog-stage">
@@ -938,10 +359,7 @@ function ExampleDialog({
   restoreFocus: () => void;
 }): ReactElement {
   return <Dialog open={Boolean(example)} onOpenChange={(open) => { if (!open) onClose(); }}>
-    {example ? <DialogPortal>
-      <DialogOverlay className="dialog-overlay" />
-      <ExampleDialogPanel key={example.title} example={example} onUse={onUse} restoreFocus={restoreFocus} />
-    </DialogPortal> : null}
+    {example ? <ExampleDialogPanel key={example.title} example={example} onUse={onUse} restoreFocus={restoreFocus} /> : null}
   </Dialog>;
 }
 
@@ -973,9 +391,7 @@ function KnowledgeDialog({
     return () => media.revert();
   }, { scope: contentRef, dependencies: [open], revertOnUpdate: true });
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogPortal>
-      <DialogOverlay className="dialog-overlay" />
-      <DialogContent ref={contentRef} className="dialog-content workspace-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
+      <DialogContent ref={contentRef} className="dialog-content workspace-dialog" showCloseButton={false} onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
         <div className="dialog-header">
           <span className="dialog-icon"><Library aria-hidden="true" /></span>
           <div>
@@ -998,7 +414,6 @@ function KnowledgeDialog({
         </div>
         <div className="dialog-actions split-actions"><span>{selected.length} 个上下文将在任务开始时提供给 Codex</span><DialogClose asChild><button type="button" className="primary-button">完成</button></DialogClose></div>
       </DialogContent>
-    </DialogPortal>
   </Dialog>;
 }
 
@@ -1054,9 +469,7 @@ function AgentDialog({
   }, { scope: contentRef, dependencies: [tab], revertOnUpdate: true });
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogPortal>
-      <DialogOverlay className="dialog-overlay" />
-      <DialogContent ref={contentRef} className="dialog-content agent-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
+      <DialogContent ref={contentRef} className="dialog-content agent-dialog" showCloseButton={false} onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
         <DialogTitle className="sr-only">Agent 设置</DialogTitle>
         <DialogDescription className="sr-only">管理本地 Codex 的技能与任务偏好。</DialogDescription>
         <aside className="agent-dialog-nav">
@@ -1094,7 +507,6 @@ function AgentDialog({
           </div>}
         </section>
       </DialogContent>
-    </DialogPortal>
   </Dialog>;
 }
 
@@ -1117,7 +529,6 @@ export function App(): ReactElement {
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanel>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedContexts, setSelectedContexts] = useState<string[]>(["workspace"]);
-  const [followLatest, setFollowLatest] = useState(true);
   const [paletteMode, setPaletteMode] = useState<ComposerPaletteMode>(null);
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [copiedRunId, setCopiedRunId] = useState<string | null>(null);
@@ -1129,11 +540,9 @@ export function App(): ReactElement {
   const startAbortRef = useRef<AbortController | null>(null);
   const startingRef = useRef(false);
   const [isStarting, setIsStarting] = useState(false);
-  const conversationScroll = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const appShellRef = useRef<HTMLDivElement | null>(null);
   const actionButtonRef = useRef<HTMLButtonElement | null>(null);
-  const jumpLatestRef = useRef<HTMLButtonElement | null>(null);
   const toastRef = useRef<HTMLDivElement | null>(null);
   const exampleTriggerRef = useRef<HTMLButtonElement | null>(null);
   const knowledgeTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -1181,7 +590,6 @@ export function App(): ReactElement {
   const snapshot = latestRun?.snapshot ?? null;
   const isRunning = Boolean(snapshot && !isTerminalStatus(snapshot.status));
   const visiblePrompt = latestRun?.visiblePrompt ?? "";
-  const renderedEventCount = conversation?.runs.reduce((total, run) => total + run.events.length, 0) ?? 0;
   const hasExplicitContexts = selectedContexts.some((id) => id !== "workspace");
   const executionPreference = resolveExecutionPreference(routing, model, effort, mode);
 
@@ -1201,12 +609,6 @@ export function App(): ReactElement {
   useEffect(() => {
     setPaletteIndex((current) => paletteItems.length ? Math.min(current, paletteItems.length - 1) : 0);
   }, [paletteItems.length, paletteMode]);
-
-  useEffect(() => {
-    const node = conversationScroll.current;
-    if (!node || !followLatest) return;
-    node.scrollTo({ top: node.scrollHeight, behavior: isRunning ? "auto" : "smooth" });
-  }, [conversation?.runs.length, renderedEventCount, followLatest, isRunning]);
 
   useGSAP(() => {
     const root = appShellRef.current;
@@ -1246,16 +648,6 @@ export function App(): ReactElement {
     }, button);
     return () => media.revert();
   }, { scope: appShellRef, dependencies: [isRunning], revertOnUpdate: true });
-
-  useGSAP(() => {
-    const button = jumpLatestRef.current;
-    if (!button || followLatest) return;
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.fromTo(button, { autoAlpha: 0, y: 7, scale: 0.96 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.2, ease: "power2.out", clearProps: "transform,opacity,visibility" });
-    }, button);
-    return () => media.revert();
-  }, { scope: appShellRef, dependencies: [followLatest], revertOnUpdate: true });
 
   useGSAP(() => {
     const toast = toastRef.current;
@@ -1302,7 +694,6 @@ export function App(): ReactElement {
     setConversation(null);
     setPrompt("");
     setSidebarOpen(false);
-    setFollowLatest(true);
     setPaletteMode(null);
     setCopiedRunId(null);
     closeStream("idle");
@@ -1384,7 +775,6 @@ export function App(): ReactElement {
 
     setError(null);
     closeStream("idle");
-    setFollowLatest(true);
     try {
       const response = await fetch(`${apiBase}/api/runs`, {
         method: "POST",
@@ -1479,7 +869,6 @@ export function App(): ReactElement {
       closeStream("idle");
       setConversation(restored);
       setPrompt("");
-      setFollowLatest(true);
       setPaletteMode(null);
       setSidebarOpen(false);
       setCopiedRunId(null);
@@ -1501,11 +890,6 @@ export function App(): ReactElement {
     } finally {
       if (viewRequestRef.current === viewRequest) restoreAbortRef.current = null;
     }
-  }
-
-  function submit(event: FormEvent): void {
-    event.preventDefault();
-    void startRun();
   }
 
   function updatePrompt(value: string): void {
@@ -1551,12 +935,6 @@ export function App(): ReactElement {
 
   function toggleSelected(value: string, setter: (next: string[]) => void, current: string[]): void {
     setter(current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
-  }
-
-  function handleConversationScroll(): void {
-    const node = conversationScroll.current;
-    if (!node) return;
-    setFollowLatest(node.scrollHeight - node.scrollTop - node.clientHeight < 96);
   }
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -1677,7 +1055,6 @@ export function App(): ReactElement {
           <span className={`connection connection-${connection}`} role="status" aria-live="polite"><span className="status-dot" />{connectionLabel}</span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild><button type="button" className="icon-control" aria-label="切换外观" title="切换外观"><ThemeIcon aria-hidden="true" /></button></DropdownMenuTrigger>
-            <DropdownMenuPortal>
               <DropdownMenuContent className="radix-menu theme-menu" align="end" sideOffset={8}>
                 <DropdownMenuLabel className="menu-caption">外观</DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={theme} onValueChange={(value) => selectTheme(value as ThemePreference)}>
@@ -1687,93 +1064,58 @@ export function App(): ReactElement {
                   })}
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
-            </DropdownMenuPortal>
           </DropdownMenu>
           <IconTooltip label="Agent 设置"><button type="button" className="icon-control" onClick={(event) => openWorkspaceDialog("agent", event.currentTarget)} aria-label="Agent 设置"><Settings aria-hidden="true" /></button></IconTooltip>
         </div>
       </header>
 
       <div className={conversation ? "main-body conversation-mode" : "main-body"}>
-        {!conversation ? <LaunchView activeTab={activeTab} onTabChange={setActiveTab} onOpenExample={(example, trigger) => { exampleTriggerRef.current = trigger; setSelectedExample(example); }} /> : <section className="conversation-view">
-          <div className="conversation-scroll" ref={conversationScroll} onScroll={handleConversationScroll}>
-            <div className="conversation-column">
-              {conversation.runs.map((run) => <ConversationRunTurn key={run.runId} run={run} copied={copiedRunId === run.runId} onCopy={(runId, answer) => { void copyAnswer(runId, answer); }} connection={connection} />)}
-            </div>
-          </div>
-          {!followLatest ? <button ref={jumpLatestRef} type="button" className="jump-latest" onClick={() => { setFollowLatest(true); conversationScroll.current?.scrollTo({ top: conversationScroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown aria-hidden="true" />跳到最新</button> : null}
+        {!conversation ? <HomeView activeTab={activeTab} onTabChange={setActiveTab} onOpenExample={(example, trigger) => { exampleTriggerRef.current = trigger; setSelectedExample(example); }} /> : <section className="conversation-view">
+          <Conversation className="ai-conversation">
+            <ConversationContent className="conversation-column" scrollClassName="conversation-scroll">
+              {conversation.runs.map((run) => <RunTurn key={run.runId} run={run} copied={copiedRunId === run.runId} onCopy={(runId, answer) => { void copyAnswer(runId, answer); }} connection={connection} />)}
+            </ConversationContent>
+            <ConversationScrollButton className="jump-latest" aria-label="跳到最新"><ArrowDown aria-hidden="true" /></ConversationScrollButton>
+          </Conversation>
         </section>}
       </div>
 
       <div className="composer-region">
         <div className="composer-wrap">
           <ComposerPalette open={Boolean(paletteMode)} mode={paletteMode} items={paletteItems} activeIndex={paletteIndex} selected={paletteMode === "skill" ? selectedSkills : selectedContexts} onSelect={selectPaletteItem} />
-        <form className="composer" onSubmit={submit}>
+        <PromptInput className="composer" onSubmit={async (message) => { await startRun(message.text); }}>
           {(selectedSkills.length || hasExplicitContexts) ? <div className="composer-chips">
             {selectedContexts.filter((id) => id !== "workspace").map((id) => { const item = contextOptions.find((context) => context.id === id); return item ? <ComposerChip key={id} icon={Library} label={item.label} onRemove={() => setSelectedContexts((current) => current.filter((value) => value !== id))} /> : null; })}
             {selectedSkills.map((id) => { const item = skillOptions.find((skill) => skill.id === id); return item ? <ComposerChip key={id} icon={Layers3} label={item.label} onRemove={() => setSelectedSkills((current) => current.filter((value) => value !== id))} /> : null; })}
           </div> : null}
-          <textarea ref={textareaRef} value={prompt} onChange={(event) => updatePrompt(event.target.value)} onKeyDown={handleComposerKeyDown} onFocus={() => { const token = prompt.match(/(?:^|\s)([\/@])[^\s]*$/); if (token) setPaletteMode(token[1] === "/" ? "skill" : "context"); }} placeholder={isRunning ? "当前任务执行中，可先准备下一条任务" : "描述你的任务，输入 / 选择技能与上下文"} rows={2} aria-label="任务描述" />
-          <div className="composer-toolbar">
-            <div className="composer-left">
+          <PromptInputBody><PromptInputTextarea ref={textareaRef} value={prompt} onChange={(event) => updatePrompt(event.target.value)} onKeyDown={handleComposerKeyDown} onFocus={() => { const token = prompt.match(/(?:^|\s)([\/@])[^\s]*$/); if (token) setPaletteMode(token[1] === "/" ? "skill" : "context"); }} placeholder={isRunning ? "当前任务执行中，可先准备下一条任务" : "描述你的任务，输入 / 选择技能与上下文"} rows={2} aria-label="任务描述" aria-controls={paletteMode ? `composer-palette-${paletteMode}` : undefined} aria-activedescendant={paletteMode && paletteItems[paletteIndex] ? `composer-${paletteMode}-${paletteItems[paletteIndex].id}` : undefined} /></PromptInputBody>
+          <PromptInputFooter className="composer-toolbar">
+            <PromptInputTools className="composer-left">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild><button ref={addMenuTriggerRef} type="button" className="icon-tool" aria-label="添加技能或上下文" title="添加技能或上下文"><Plus aria-hidden="true" /></button></DropdownMenuTrigger>
-                <DropdownMenuPortal>
                   <DropdownMenuContent className="radix-menu add-menu" align="start" side="top" sideOffset={10}>
                     <DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("knowledge", addMenuTriggerRef.current)}><Library aria-hidden="true" /><span><strong>添加上下文</strong><small>项目文件与调研材料</small></span></DropdownMenuItem>
                     <DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("agent", addMenuTriggerRef.current)}><Layers3 aria-hidden="true" /><span><strong>使用技能</strong><small>选择专门的工作方法</small></span></DropdownMenuItem>
                   </DropdownMenuContent>
-                </DropdownMenuPortal>
               </DropdownMenu>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild><button type="button" className={routing === "tokenresearch" ? "model-trigger routing-active" : mode === "ultra" ? "model-trigger ultra-active" : "model-trigger"} aria-label={routing === "tokenresearch" ? "TokenResearch 智能路由，Sol 主脑与 Luna Max 子 Agent" : `模型 ${modelLabel(model)}，推理强度 ${effortLabel(effort)}${mode === "ultra" ? "，Ultra 模式" : ""}`}>
-                  {routing === "tokenresearch" ? <><span>TokenResearch</span><span>·</span><span>Sol + Luna Max</span><span className="routing-trigger-badge"><BrainCircuit aria-hidden="true" />路由</span></> : <><span>{modelLabel(model)}</span><span>·</span><span>{effortLabel(effort)}</span>{mode === "ultra" ? <span className="ultra-trigger-badge"><Zap aria-hidden="true" />Ultra</span> : null}</>}
-                  <ChevronDown aria-hidden="true" />
-                </button></DropdownMenuTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuContent className="radix-menu settings-menu model-picker" align="start" side="top" sideOffset={10} collisionPadding={12}>
-                    <DropdownMenuLabel className="menu-caption settings-section-heading"><span>智能路由</span><small>默认开启</small></DropdownMenuLabel>
-                    <DropdownMenuRadioGroup className="routing-grid" value={routing} onValueChange={selectRouting}>
-                      <DropdownMenuRadioItem className="routing-menu-item" value="tokenresearch" onSelect={(event) => event.preventDefault()}>
-                        <span className="routing-icon"><BrainCircuit aria-hidden="true" /></span>
-                        <span><strong>TokenResearch</strong><small>{tokenResearchRoutingProfile.description}</small><code>Sol Ultra 主脑 / Luna Max 子 Agent</code></span>
-                        {routing === "tokenresearch" ? <Check aria-hidden="true" /> : null}
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem className="routing-menu-item routing-manual-item" value="manual" onSelect={(event) => event.preventDefault()}>
-                        <span className="routing-icon routing-icon-manual"><SlidersHorizontal aria-hidden="true" /></span>
-                        <span><strong>手动设置</strong><small>直接选择模型、推理强度和运行模式</small></span>
-                        {routing === "manual" ? <Check aria-hidden="true" /> : null}
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                    <DropdownMenuSeparator className="menu-separator" />
-                    <DropdownMenuLabel className="menu-caption">GPT-5.6</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup value={model} onValueChange={selectModel}>
-                      {modelOptions.filter((option) => option.group === "gpt-5.6").map((option) => <DropdownMenuRadioItem className="radio-menu-item model-menu-item" value={option.value} key={option.value} onSelect={(event) => event.preventDefault()}><span className="model-orb" aria-hidden="true">{option.value.split("-").at(-1)?.slice(0, 1).toUpperCase()}</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{routing === "manual" && model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}
-                      <DropdownMenuSeparator className="menu-separator" />
-                      <DropdownMenuLabel className="menu-caption">本地设置</DropdownMenuLabel>
-                      {modelOptions.filter((option) => option.group === "local").map((option) => <DropdownMenuRadioItem className="radio-menu-item model-menu-item" value={option.value} key={option.value} onSelect={(event) => event.preventDefault()}><span className="model-orb model-orb-auto" aria-hidden="true">A</span><span><strong>{option.label}</strong><small>{option.description}</small></span>{routing === "manual" && model === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>)}
-                    </DropdownMenuRadioGroup>
-                    <DropdownMenuSeparator className="menu-separator" />
-                    <DropdownMenuLabel className="menu-caption settings-section-heading"><span>推理强度</span><small>{routing === "tokenresearch" ? "由路由固定 Max" : mode === "ultra" ? "Ultra 固定 Max" : effortLabel(effort)}</small></DropdownMenuLabel>
-                    <DropdownMenuRadioGroup className="effort-grid" value={effort} onValueChange={selectEffort}>{effortOptions.map((option) => <DropdownMenuRadioItem className="effort-menu-item" value={option.value} key={option.value} disabled={mode === "ultra" && routing === "manual"} onSelect={(event) => event.preventDefault()}><strong>{option.label}</strong><small>{option.description}</small></DropdownMenuRadioItem>)}</DropdownMenuRadioGroup>
-                    <DropdownMenuSeparator className="menu-separator" />
-                    <DropdownMenuLabel className="menu-caption settings-section-heading"><span>运行模式</span><small>独立于推理强度</small></DropdownMenuLabel>
-                    <DropdownMenuRadioGroup className="mode-grid" value={mode} onValueChange={selectRunMode}>
-                      <DropdownMenuRadioItem className="mode-menu-item" value="standard" onSelect={(event) => event.preventDefault()}><span className="mode-icon"><User aria-hidden="true" /></span><span><strong>Standard</strong><small>单 Agent 执行</small></span>{routing === "manual" && mode === "standard" ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem className="mode-menu-item ultra-mode-item" value="ultra" disabled={!modelSupportsUltra(model)} onSelect={(event) => event.preventDefault()}><span className="mode-icon"><Zap aria-hidden="true" /></span><span><strong>Ultra</strong><small>{modelSupportsUltra(model) ? "多 Agent 并行探索" : model === "gpt-5.6-luna" ? "Luna 不支持；请选 Sol / Terra" : "仅支持 Sol / Terra"}</small></span>{routing === "manual" && mode === "ultra" ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                    <DropdownMenuSeparator className="menu-separator" />
-                    <DropdownMenuItem className="menu-status" onSelect={(event) => event.preventDefault()}><HardDrive aria-hidden="true" /><span>工作区可写</span><ShieldCheck aria-hidden="true" /></DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenuPortal>
-              </DropdownMenu>
-            </div>
+              <ExecutionSelector
+                routing={routing}
+                model={model}
+                effort={effort}
+                mode={mode}
+                onRoutingChange={(value) => selectRouting(value)}
+                onModelChange={(value) => selectModel(value)}
+                onEffortChange={(value) => selectEffort(value)}
+                onModeChange={(value) => selectRunMode(value)}
+              />
+            </PromptInputTools>
             <div className="composer-right">
               <span className="context-meter" title="本次任务将使用当前工作区"><span className="meter-ring" />本机</span>
               {isRunning ? <button ref={actionButtonRef} type="button" className="stop-button" onClick={() => void cancelRun()} aria-label="停止任务"><Square aria-hidden="true" /></button> : <button ref={actionButtonRef} type="submit" className="send-button" disabled={isStarting || !prompt.trim()} aria-label="发送任务"><ArrowUp aria-hidden="true" /></button>}
             </div>
-          </div>
-        </form>
+          </PromptInputFooter>
+        </PromptInput>
         </div>
       </div>
     </main>

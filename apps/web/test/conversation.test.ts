@@ -93,7 +93,11 @@ test("projects answer, reasoning, tool output, files, and diffs per run", () => 
     { ...eventBase("run_child", 5), type: "part-delta", partId: "tool:call_1", kind: "text", delta: "ok" },
     { ...eventBase("run_child", 6), type: "tool", tool: { callId: "call_1", name: "shell", phase: "succeeded" } },
     { ...eventBase("run_child", 7), type: "file", file: { fileId: "file_1", name: "report.md", mimeType: "text/markdown", revision: 1 } },
-    { ...eventBase("run_child", 8), type: "part", part: { partId: "diff:report.md", kind: "text", text: "+done" } }
+    { ...eventBase("run_child", 8), type: "part", part: { partId: "diff:report.md", kind: "text", text: "+done" } },
+    { ...eventBase("run_child", 9), type: "subagent", subagent: { subagentRunId: "sub_1", label: "Luna reviewer", status: "running", parentRunId: "run_child" } },
+    { ...eventBase("run_child", 10), type: "subagent", subagent: { subagentRunId: "sub_1", label: "Luna reviewer", status: "completed", parentRunId: "run_child" } },
+    { ...eventBase("run_child", 11), type: "error", code: "tool_warning", message: "Recovered warning", retryable: true },
+    { ...eventBase("run_child", 12), type: "run-finished", status: "completed", usage: { inputTokens: 20, outputTokens: 10 } }
   ];
 
   const projection = projectRunEvents(events);
@@ -104,4 +108,8 @@ test("projects answer, reasoning, tool output, files, and diffs per run", () => 
   assert.equal(projection.toolOutput.get("call_1"), "ok");
   assert.equal(projection.files[0]?.file.name, "report.md");
   assert.equal(projection.diffs[0]?.part.partId, "diff:report.md");
+  assert.equal(projection.subagents.length, 1);
+  assert.equal(projection.subagents[0]?.event.subagent.status, "completed");
+  assert.equal(projection.errors[0]?.message, "Recovered warning");
+  assert.deepEqual(projection.usage, { inputTokens: 20, outputTokens: 10 });
 });

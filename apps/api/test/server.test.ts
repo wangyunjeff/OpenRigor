@@ -32,6 +32,12 @@ test("creates an ordered conversation chain while preserving the legacy run deta
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
   try {
+    const dev5174Health = await fetch(`${baseUrl}/healthz`, {
+      headers: { origin: "http://127.0.0.1:5174" }
+    });
+    assert.equal(dev5174Health.status, 200);
+    assert.equal(dev5174Health.headers.get("access-control-allow-origin"), "http://127.0.0.1:5174");
+
     const lunaUltraResponse = await fetch(`${baseUrl}/api/runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },

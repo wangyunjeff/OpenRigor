@@ -17,6 +17,7 @@ M1 in `docs/ROADMAP.md`: durable single-tenant alpha. Keep `packages/protocol` b
 - Never send provider keys, session cookies, or sandbox credentials through `RunEvent` payloads.
 - Add tests for protocol changes, replay, authorization, cancellation, retries, or credit accounting.
 - Preserve unrelated user changes and avoid generated artifacts in Git.
+- Build AI-facing UI on Apache-2.0 Vercel AI Elements and shadcn primitives, adapt AICSS as a visual and interaction reference unless its source is explicitly licensed for redistribution, and orchestrate product motion with scoped, reduced-motion-safe GSAP timelines.
 
 ## Verification
 
