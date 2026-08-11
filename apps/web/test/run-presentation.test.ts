@@ -3,6 +3,7 @@ import test from "node:test";
 import type { RunStatus } from "@openrigor/protocol";
 import {
   STALE_EVENT_AFTER_MS,
+  executionOpenTransition,
   formatElapsed,
   formatLastUpdate,
   formatToolDuration,
@@ -11,6 +12,14 @@ import {
   runElapsedMs,
   toolElapsedMs
 } from "../src/run-presentation";
+
+test("preserves the user's execution rail choice during one run", () => {
+  const current = { runId: "run_1", isRunning: true };
+  assert.equal(executionOpenTransition(current, current), undefined);
+  assert.equal(executionOpenTransition(current, { ...current, isRunning: false }), false);
+  assert.equal(executionOpenTransition({ runId: "run_1", isRunning: false }, current), true);
+  assert.equal(executionOpenTransition(current, { runId: "run_2", isRunning: true }), true);
+});
 
 test("only statuses that represent active work animate", () => {
   const expected: Record<RunStatus, boolean> = {

@@ -3,10 +3,14 @@ import type { ChatStatus } from "ai";
 import type { ToolPart } from "../../components/ai-elements/tool";
 
 type ToolPhase = Extract<RunEvent, { type: "tool" }>["tool"]["phase"];
+type ToolOutcome = Extract<RunEvent, { type: "tool" }>["tool"]["outcome"];
 
-export function toolPhaseToAiState(phase: ToolPhase): ToolPart["state"] {
+export function toolPhaseToAiState(phase: ToolPhase, outcome?: ToolOutcome): ToolPart["state"] {
   if (phase === "requested") return "input-streaming";
   if (phase === "running") return "input-available";
+  if (outcome === "declined") return "output-denied";
+  if (outcome === "error") return "output-error";
+  if (outcome === "success" || outcome === "no-result" || outcome === "partial") return "output-available";
   if (phase === "succeeded") return "output-available";
   return "output-error";
 }

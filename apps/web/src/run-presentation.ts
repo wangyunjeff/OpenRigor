@@ -22,6 +22,20 @@ export function isActivelyWorkingStatus(status: RunStatus): boolean {
   return activelyWorkingStatuses.has(status);
 }
 
+/**
+ * Decide when the execution rail should change itself. A status update within
+ * one active run must preserve the user's open/closed choice; only a new run
+ * or a terminal transition gets an automatic toggle.
+ */
+export function executionOpenTransition(
+  previous: { runId: string; isRunning: boolean } | undefined,
+  current: { runId: string; isRunning: boolean }
+): boolean | undefined {
+  if (!previous || previous.runId !== current.runId) return current.isRunning;
+  if (previous.isRunning !== current.isRunning) return current.isRunning;
+  return undefined;
+}
+
 export function formatElapsed(milliseconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
   if (totalSeconds < 60) return `${totalSeconds}s`;

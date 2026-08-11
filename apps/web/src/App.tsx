@@ -114,6 +114,7 @@ import {
   type RunMode,
   type ThemePreference
 } from "./workspace-preferences";
+import { requestRunStart } from "./run-client";
 
 gsap.registerPlugin(useGSAP);
 
@@ -776,35 +777,31 @@ export function App(): ReactElement {
     setError(null);
     closeStream("idle");
     try {
-      const response = await fetch(`${apiBase}/api/runs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // API runs are currently in-memory. If the browser retained a run from
+      // before an API restart, retry once as a fresh root run. This is limited
+      // to the explicit continuation-not-found response so genuine failures
+      // and route-level 404s remain visible.
+      const { response, body, continuationExpired } = await requestRunStart({
+        endpoint: `${apiBase}/api/runs`,
+        body: {
           prompt: requestPrompt,
           model: executionPreference.model,
           mode: executionPreference.mode,
           effort: executionPreference.effort,
           ...(routing === "tokenresearch" ? { routing } : {}),
-          clientRequestId,
-          ...(continueFromRunId === undefined ? {} : { continueFromRunId })
-        }),
+          clientRequestId
+        },
+        ...(continueFromRunId === undefined ? {} : { continueFromRunId }),
         signal: controller.signal
       });
-      const body = await response.json() as {
-        runId?: string;
-        status?: "queued" | "running";
-        conversationId?: string;
-        rootRunId?: string;
-        parentRunId?: string;
-        error?: string;
-      };
       if (!response.ok || !body.runId) throw new Error(body.error ?? "无法启动任务");
       if (viewRequestRef.current !== viewRequest) return;
 
       const acceptedAt = new Date().toISOString();
-      const rootRunId = body.rootRunId ?? existingRootRunId ?? body.runId;
-      const conversationId = body.conversationId ?? conversation?.conversationId ?? rootRunId;
-      const parentRunId = body.parentRunId ?? continueFromRunId;
+      const effectiveContinueFromRunId = continuationExpired ? undefined : continueFromRunId;
+      const rootRunId = body.rootRunId ?? (effectiveContinueFromRunId === undefined ? body.runId : existingRootRunId ?? body.runId);
+      const conversationId = body.conversationId ?? (effectiveContinueFromRunId === undefined ? rootRunId : conversation?.conversationId ?? rootRunId);
+      const parentRunId = body.parentRunId ?? effectiveContinueFromRunId;
       const acceptedSnapshot: ConversationRunSnapshot = {
         runId: body.runId,
         conversationId,
@@ -822,11 +819,11 @@ export function App(): ReactElement {
       };
       const acceptedRun: ConversationRunView = { runId: body.runId, visiblePrompt: cleanPrompt, snapshot: acceptedSnapshot, events: [] };
       setConversation((previous) => {
-        if (!continueFromRunId) return { conversationId, rootRunId, runs: [acceptedRun] };
-        if (!previous || previous.rootRunId !== rootRunId || previous.runs.at(-1)?.runId !== continueFromRunId) return previous;
+        if (!effectiveContinueFromRunId) return { conversationId, rootRunId, runs: [acceptedRun] };
+        if (!previous || previous.rootRunId !== rootRunId || previous.runs.at(-1)?.runId !== effectiveContinueFromRunId) return previous;
         return { ...previous, conversationId, runs: [...previous.runs, acceptedRun] };
       });
-      rememberTask({ rootRunId, conversationId, latestRunId: body.runId, prompt: conversationTitle, status: acceptedSnapshot.status, updatedAt: acceptedAt });
+      rememberTask({ rootRunId, conversationId, latestRunId: body.runId, prompt: continuationExpired ? cleanPrompt : conversationTitle, status: acceptedSnapshot.status, updatedAt: acceptedAt });
       window.localStorage.setItem(activeConversationStorageKey, rootRunId);
       subscribe(body.runId);
       setPrompt("");
@@ -864,7 +861,19 @@ export function App(): ReactElement {
       const response = await fetch(`${apiBase}/api/runs/${task.latestRunId}`, { signal: controller.signal });
       const body = await response.json() as ConversationRestorePayload & { error?: string };
       const restored = restoreConversation(body);
-      if (!response.ok || !restored) throw new Error(body.error ?? "无法读取任务");
+      if (!response.ok || !restored) {
+        // The API keeps runs in memory, so a browser can retain a task whose
+        // record disappeared after a restart. Treat that as stale history,
+        // not as a failed user operation, and quietly remove it.
+        if (response.status === 404) {
+          setRecentTasks((previous) => previous.filter((item) => item.rootRunId !== task.rootRunId));
+          window.localStorage.removeItem(activeConversationStorageKey);
+          closeStream("idle");
+          setConversation(null);
+          return;
+        }
+        throw new Error(body.error ?? "无法读取任务");
+      }
       if (viewRequestRef.current !== viewRequest) return;
       closeStream("idle");
       setConversation(restored);

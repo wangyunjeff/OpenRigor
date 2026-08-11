@@ -91,7 +91,7 @@ test("projects answer, reasoning, tool output, files, and diffs per run", () => 
     { ...eventBase("run_child", 3), type: "part", part: { partId: "reasoning", kind: "reasoning", text: "Checked state" } },
     { ...eventBase("run_child", 4), type: "tool", tool: { callId: "call_1", name: "shell", phase: "running" } },
     { ...eventBase("run_child", 5), type: "part-delta", partId: "tool:call_1", kind: "text", delta: "ok" },
-    { ...eventBase("run_child", 6), type: "tool", tool: { callId: "call_1", name: "shell", phase: "succeeded" } },
+    { ...eventBase("run_child", 6), type: "tool", tool: { callId: "call_1", name: "shell", phase: "succeeded", outcome: "success", durationMs: 120 } },
     { ...eventBase("run_child", 7), type: "file", file: { fileId: "file_1", name: "report.md", mimeType: "text/markdown", revision: 1 } },
     { ...eventBase("run_child", 8), type: "part", part: { partId: "diff:report.md", kind: "text", text: "+done" } },
     { ...eventBase("run_child", 9), type: "subagent", subagent: { subagentRunId: "sub_1", label: "Luna reviewer", status: "running", parentRunId: "run_child" } },
@@ -111,5 +111,58 @@ test("projects answer, reasoning, tool output, files, and diffs per run", () => 
   assert.equal(projection.subagents.length, 1);
   assert.equal(projection.subagents[0]?.event.subagent.status, "completed");
   assert.equal(projection.errors[0]?.message, "Recovered warning");
+  assert.equal(projection.activities.map((activity) => activity.kind).join(","), "reasoning,tool,file,diff,subagent,error");
+  assert.equal(projection.activities.find((activity) => activity.kind === "tool")?.kind, "tool");
+  assert.equal(projection.activities.find((activity) => activity.kind === "tool" && activity.projection.event.tool.callId === "call_1")?.projection.event.tool.durationMs, 120);
   assert.deepEqual(projection.usage, { inputTokens: 20, outputTokens: 10 });
+});
+
+test("keeps interleaved activities in first-seen order while merging tool updates", () => {
+  const events: RunEvent[] = [
+    { ...eventBase("run_child", 1), type: "tool", tool: { callId: "search", name: "command.execute", phase: "requested" } },
+    { ...eventBase("run_child", 2), type: "part-delta", partId: "reasoning:one", kind: "reasoning", delta: "think" },
+    { ...eventBase("run_child", 3), type: "tool", tool: { callId: "search", name: "command.execute", phase: "succeeded", outcome: "no-result", exitCode: 1 } },
+    { ...eventBase("run_child", 4), type: "error", code: "CODEX_ERROR", message: "recoverable", retryable: true },
+    { ...eventBase("run_child", 5), type: "part-delta", partId: "reasoning:one", kind: "reasoning", delta: " more" }
+  ];
+  const projection = projectRunEvents(events);
+  assert.deepEqual(projection.activities.map((activity) => activity.kind), ["tool", "reasoning", "error"]);
+  const tool = projection.activities[0];
+  assert.equal(tool?.kind, "tool");
+  if (tool?.kind === "tool") {
+    assert.equal(tool.projection.event.tool.phase, "succeeded");
+    assert.equal(tool.projection.event.tool.outcome, "no-result");
+  }
+  assert.equal(projection.reasoningProjection?.text, "think more");
+});
+
+test("keeps separate reasoning blocks at their provider positions", () => {
+  const events: RunEvent[] = [
+    { ...eventBase("run_child", 1), ts: "2026-08-10T00:00:01.000Z", type: "part-delta", partId: "reasoning:before", kind: "reasoning", delta: "before" },
+    { ...eventBase("run_child", 2), ts: "2026-08-10T00:00:02.000Z", type: "tool", tool: { callId: "search", name: "command.execute", phase: "running" } },
+    { ...eventBase("run_child", 3), ts: "2026-08-10T00:00:03.000Z", type: "tool", tool: { callId: "search", name: "command.execute", phase: "succeeded", outcome: "success" } },
+    { ...eventBase("run_child", 4), ts: "2026-08-10T00:00:04.000Z", type: "part-delta", partId: "reasoning:after", kind: "reasoning", delta: "after" }
+  ];
+
+  const projection = projectRunEvents(events);
+  assert.deepEqual(projection.activities.map((activity) => activity.kind), ["reasoning", "tool", "reasoning"]);
+  const reasoningActivities = projection.activities.filter((activity) => activity.kind === "reasoning");
+  assert.deepEqual(reasoningActivities.map((activity) => activity.projection.partId), ["reasoning:before", "reasoning:after"]);
+  assert.equal(reasoningActivities[0]?.projection.firstAt, "2026-08-10T00:00:01.000Z");
+  assert.equal(reasoningActivities[0]?.projection.lastAt, "2026-08-10T00:00:01.000Z");
+  assert.equal(reasoningActivities[1]?.projection.firstAt, "2026-08-10T00:00:04.000Z");
+  assert.equal(projection.reasoning, "before\n\nafter");
+});
+
+test("coalesces repeated diff refreshes into one latest activity", () => {
+  const events: RunEvent[] = [
+    { ...eventBase("run_child", 1), type: "part", part: { partId: "diff:src/app.tsx", kind: "text", text: "-old", done: false } },
+    { ...eventBase("run_child", 2), type: "part", part: { partId: "diff:src/app.tsx", kind: "text", text: "+new", done: true } }
+  ];
+
+  const projection = projectRunEvents(events);
+  const diffActivities = projection.activities.filter((activity) => activity.kind === "diff");
+  assert.equal(diffActivities.length, 1);
+  assert.equal(diffActivities[0]?.kind, "diff");
+  if (diffActivities[0]?.kind === "diff") assert.equal(diffActivities[0].event.part.text, "+new");
 });

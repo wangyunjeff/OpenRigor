@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createInitialSnapshot, isTerminalStatus, validateRunRequest } from "../src/index.js";
+import { TOOL_OUTCOMES, createInitialSnapshot, isTerminalStatus, validateRunRequest } from "../src/index.js";
 
 test("validates a run request and applies safe defaults", () => {
   const request = validateRunRequest({ prompt: "  inspect this repo  " });
@@ -80,4 +80,8 @@ test("normalizes TokenResearch routing to a deterministic Sol Ultra/max coordina
   assert.equal(request.effort, "max");
   assert.equal(validateRunRequest({ prompt: "canonical route", routing: "tokenresearch" }).routing, "tokenresearch");
   assert.throws(() => validateRunRequest({ prompt: "bad route", routing: { id: "unknown" } }), /routing\.id must be tokenresearch/);
+});
+
+test("exposes additive tool outcomes without changing the lifecycle contract", () => {
+  assert.deepEqual(TOOL_OUTCOMES, ["success", "no-result", "partial", "error", "declined"]);
 });

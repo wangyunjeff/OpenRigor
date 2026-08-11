@@ -41,15 +41,35 @@ export interface SubagentProjection {
   firstIndex: number;
 }
 
+export interface ReasoningProjection {
+  /** Provider part id; separate blocks keep the activity rail chronological. */
+  partId: string;
+  text: string;
+  firstAt: string;
+  lastAt: string;
+  firstIndex: number;
+}
+
+export type RunActivity =
+  | { kind: "reasoning"; projection: ReasoningProjection }
+  | { kind: "tool"; projection: ToolProjection }
+  | { kind: "subagent"; projection: SubagentProjection }
+  | { kind: "file"; event: Extract<RunEvent, { type: "file" }>; firstIndex: number }
+  | { kind: "diff"; event: Extract<RunEvent, { type: "part" }>; firstIndex: number }
+  | { kind: "error"; event: Extract<RunEvent, { type: "error" }>; firstIndex: number };
+
 export interface RunProjection {
   answer: string;
   reasoning: string;
+  reasoningProjection?: ReasoningProjection;
   toolOutput: Map<string, string>;
   tools: ToolProjection[];
   diffs: Array<Extract<RunEvent, { type: "part" }>>;
   files: Array<Extract<RunEvent, { type: "file" }>>;
   subagents: SubagentProjection[];
   errors: Array<Extract<RunEvent, { type: "error" }>>;
+  /** Activities ordered by their first provider event, with tool lifecycles merged. */
+  activities: RunActivity[];
   usage: UsageSummary | undefined;
 }
 
@@ -132,13 +152,26 @@ export function applyRunEvent(conversation: ConversationViewState, event: RunEve
 export function projectRunEvents(events: RunEvent[]): RunProjection {
   const answerParts = new Map<string, string>();
   const reasoningParts = new Map<string, string>();
+  const reasoningMeta = new Map<string, { firstAt: string; lastAt: string; firstIndex: number }>();
   const toolOutput = new Map<string, string>();
   const projectedTools = new Map<string, ToolProjection>();
   const projectedSubagents = new Map<string, SubagentProjection>();
   const diffs: RunProjection["diffs"] = [];
   const files: RunProjection["files"] = [];
   const errors: RunProjection["errors"] = [];
+  const activities = new Map<string, RunActivity>();
   let usage: UsageSummary | undefined;
+
+  const recordReasoning = (partId: string, text: string, event: RunEvent, index: number, append: boolean): void => {
+    if (append) reasoningParts.set(partId, `${reasoningParts.get(partId) ?? ""}${text}`);
+    else if (!reasoningParts.has(partId)) reasoningParts.set(partId, text);
+    const previous = reasoningMeta.get(partId);
+    reasoningMeta.set(partId, {
+      firstAt: previous?.firstAt ?? event.ts,
+      lastAt: event.ts,
+      firstIndex: previous?.firstIndex ?? index
+    });
+  };
 
   events.forEach((event, index) => {
     if (event.type === "part-delta") {
@@ -148,7 +181,7 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
       } else if (event.kind === "text") {
         answerParts.set(event.partId, `${answerParts.get(event.partId) ?? ""}${event.delta}`);
       } else {
-        reasoningParts.set(event.partId, `${reasoningParts.get(event.partId) ?? ""}${event.delta}`);
+        recordReasoning(event.partId, event.delta, event, index, true);
       }
       return;
     }
@@ -156,10 +189,19 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
     if (event.type === "part") {
       if (event.part.partId.startsWith("diff:")) {
         diffs.push(event);
+        // Codex emits a new `part` for every diff refresh. Keep one activity
+        // row per file while replacing its body with the latest revision.
+        const activityKey = `diff:${event.part.partId}`;
+        const previous = activities.get(activityKey);
+        activities.set(activityKey, {
+          kind: "diff",
+          event,
+          firstIndex: previous?.kind === "diff" ? previous.firstIndex : index
+        });
       } else if (event.part.kind === "text" && !answerParts.has(event.part.partId)) {
         answerParts.set(event.part.partId, event.part.text);
       } else if (event.part.kind === "reasoning" && !reasoningParts.has(event.part.partId)) {
-        reasoningParts.set(event.part.partId, event.part.text);
+        recordReasoning(event.part.partId, event.part.text, event, index, false);
       }
       return;
     }
@@ -172,11 +214,14 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
         lastAt: event.ts,
         firstIndex: existing?.firstIndex ?? index
       });
+      const projection = projectedTools.get(event.tool.callId);
+      if (projection) activities.set(`tool:${event.tool.callId}`, { kind: "tool", projection });
       return;
     }
 
     if (event.type === "file") {
       files.push(event);
+      activities.set(`file:${event.eventId}`, { kind: "file", event, firstIndex: index });
       return;
     }
 
@@ -186,26 +231,58 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
         event,
         firstIndex: existing?.firstIndex ?? index
       });
+      const projection = projectedSubagents.get(event.subagent.subagentRunId);
+      if (projection) activities.set(`subagent:${event.subagent.subagentRunId}`, { kind: "subagent", projection });
       return;
     }
 
     if (event.type === "error") {
       errors.push(event);
+      activities.set(`error:${event.eventId}`, { kind: "error", event, firstIndex: index });
       return;
     }
 
     if (event.type === "run-finished") usage = event.usage;
   });
 
+  const reasoningBlocks = [...reasoningParts.entries()]
+    .map(([partId, text]) => {
+      const meta = reasoningMeta.get(partId);
+      return meta ? { partId, text, ...meta } : undefined;
+    })
+    .filter((block): block is ReasoningProjection => block !== undefined && block.text.length > 0)
+    .sort((left, right) => left.firstIndex - right.firstIndex);
+  const reasoning = reasoningBlocks.map((block) => block.text).join("\n\n");
+  const firstReasoning = reasoningBlocks[0];
+  const lastReasoning = reasoningBlocks.at(-1);
+  const reasoningProjection = firstReasoning && lastReasoning
+    ? reasoningBlocks.length === 1
+      ? firstReasoning
+      : {
+          partId: "reasoning",
+          text: reasoning,
+          firstAt: firstReasoning.firstAt,
+          lastAt: lastReasoning.lastAt,
+          firstIndex: firstReasoning.firstIndex
+        }
+    : undefined;
+  for (const block of reasoningBlocks) activities.set(`reasoning:${block.partId}`, { kind: "reasoning", projection: block });
+
   return {
     answer: [...answerParts.values()].join("\n\n"),
-    reasoning: [...reasoningParts.values()].join("\n\n"),
+    reasoning,
+    ...(reasoningProjection === undefined ? {} : { reasoningProjection }),
     toolOutput,
     tools: [...projectedTools.values()].sort((left, right) => left.firstIndex - right.firstIndex),
     diffs,
     files,
     subagents: [...projectedSubagents.values()].sort((left, right) => left.firstIndex - right.firstIndex),
     errors,
+    activities: [...activities.values()].sort((left, right) => {
+      const leftIndex = left.kind === "tool" || left.kind === "subagent" ? left.projection.firstIndex : left.kind === "reasoning" ? left.projection.firstIndex : left.firstIndex;
+      const rightIndex = right.kind === "tool" || right.kind === "subagent" ? right.projection.firstIndex : right.kind === "reasoning" ? right.projection.firstIndex : right.firstIndex;
+      return leftIndex - rightIndex;
+    }),
     usage
   };
 }

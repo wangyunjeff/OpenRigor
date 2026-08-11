@@ -124,4 +124,18 @@ The local alpha keeps the public `RunEvent` contract stable while adapting the C
 
 Unknown provider notifications are ignored by the adapter and never forwarded verbatim. This prevents provider-specific payloads or credentials from becoming part of the browser-facing contract.
 
+### Tool result semantics
+
+`tool.tool.phase` remains the provider lifecycle (`requested`, `running`, `succeeded`, or `failed`) for protocol-v0 compatibility. Completed tool events may additionally include `outcome`, `exitCode`, `durationMs`, and `diagnostic`:
+
+| Outcome | Meaning | UI treatment |
+|---|---|---|
+| `success` | Command completed normally | Quiet green completion, output collapsed |
+| `no-result` | Search returned no matches (commonly exit code 1) | Neutral status, never a red error |
+| `partial` | Non-zero command returned useful output alongside diagnostics | Amber warning with output preserved |
+| `error` | Tool/provider execution genuinely failed | Red status and diagnostic expanded |
+| `declined` | Approval or input request was declined by the local alpha | Low-emphasis declined state |
+
+Codex's local shell wrapper can exit with code 0 while emitting the underlying status as `__RG_EXIT_CODE__=<n>`. The API consumes that marker for classification and removes it from browser-visible terminal output.
+
 For the local live process, the first run calls `thread/start` once and every accepted follow-up calls `turn/start` with the same `threadId`. The default ephemeral thread exists only in that app-server process. OpenRigor's run/conversation indexes are also in API memory, so API or app-server restart recovery is deliberately outside this alpha contract; cold persisted-thread recovery would additionally require `thread/resume` and durable server metadata.

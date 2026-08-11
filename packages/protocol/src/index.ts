@@ -77,12 +77,28 @@ export interface TextPart {
   done?: boolean;
 }
 
+/**
+ * A tool's provider lifecycle (`ToolCall.phase`) is intentionally separate
+ * from the user-facing result. A non-zero search exit code can be an expected
+ * no-result, and a command can return useful output together with warnings.
+ */
+export const TOOL_OUTCOMES = ["success", "no-result", "partial", "error", "declined"] as const;
+export type ToolOutcome = typeof TOOL_OUTCOMES[number];
+
 export interface ToolCall {
   callId: string;
   name: string;
   phase: "requested" | "running" | "succeeded" | "failed";
   inputSummary?: string;
   outputSummary?: string;
+  /** User-facing classification; additive to preserve protocol-v0 clients. */
+  outcome?: ToolOutcome;
+  /** Native command exit code when the provider reports one. */
+  exitCode?: number;
+  /** Native provider duration in milliseconds when available. */
+  durationMs?: number;
+  /** Short, safe diagnostic explaining a non-success outcome. */
+  diagnostic?: string;
   startedAt?: string;
   finishedAt?: string;
 }

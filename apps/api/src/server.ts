@@ -15,7 +15,8 @@ import {
   type RunRequest,
   type RunSnapshot,
   type RunStatus,
-  type ToolCall
+  type ToolCall,
+  type ToolOutcome
 } from "@openrigor/protocol";
 import {
   createCodexAppServerClientFromEnv,
@@ -342,12 +343,218 @@ function codexToolPhase(item: Record<string, unknown>, started: boolean): ToolCa
 }
 
 function codexToolOutput(item: Record<string, unknown>): string | undefined {
+  const allowExitMarker = item.type === "commandExecution";
   const candidates = [item.aggregatedOutput, item.result, item.error, item.output];
   for (const candidate of candidates) {
-    const text = typeof candidate === "string" ? safeCodexText(candidate, 2_000) : candidate && typeof candidate === "object" ? safeCodexText(JSON.stringify(candidate), 2_000) : undefined;
+    const raw = typeof candidate === "string" ? candidate : candidate && typeof candidate === "object" ? JSON.stringify(candidate) : undefined;
+    const text = raw === undefined ? undefined : cleanCodexToolOutput(raw, allowExitMarker);
     if (text) return text;
   }
   return undefined;
+}
+
+function terminalExitMarker(value: string): string | undefined {
+  const lines = value.split(/\r?\n/);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim();
+    if (!line) continue;
+    return line.match(/^__(?:RG|OPENRIGOR)_EXIT_CODE__\s*=\s*(-?\d+)$/i)?.[1];
+  }
+  return undefined;
+}
+
+function cleanCodexToolOutput(value: string, allowExitMarker = false): string | undefined {
+  const safeValue = safeCodexText(value, 2_000);
+  if (!safeValue) return undefined;
+  if (!allowExitMarker) return safeValue.trim() || undefined;
+
+  const lines = safeValue.split(/\r?\n/);
+  let lastNonEmpty = lines.length - 1;
+  while (lastNonEmpty >= 0 && !lines[lastNonEmpty]?.trim()) lastNonEmpty -= 1;
+  if (lastNonEmpty >= 0 && terminalExitMarker(lines[lastNonEmpty] ?? "") !== undefined) lines.splice(lastNonEmpty, 1);
+  const cleaned = lines.join("\n").trim();
+  return cleaned || undefined;
+}
+
+function codexReportedExitCode(item: Record<string, unknown>, output: string | undefined): number | undefined {
+  if (item.type !== "commandExecution") return codexNumber(item.exitCode);
+  const rawCandidates = [output, item.aggregatedOutput, item.output, item.result]
+    .map((candidate) => typeof candidate === "string" ? candidate : candidate && typeof candidate === "object" ? JSON.stringify(candidate) : undefined)
+    .filter((candidate): candidate is string => candidate !== undefined);
+  const marker = rawCandidates
+    .map((candidate) => terminalExitMarker(candidate))
+    .find((value) => value !== undefined);
+  // Codex's shell wrapper reports the process status through this marker and
+  // exits the wrapper itself with zero. Prefer the marker when present.
+  if (marker !== undefined) return Number.parseInt(marker, 10);
+  return codexNumber(item.exitCode);
+}
+
+interface CodexToolOutcome {
+  outcome: ToolOutcome;
+  exitCode?: number;
+  durationMs?: number;
+  diagnostic?: string;
+}
+
+function codexCommandActionTypes(item: Record<string, unknown>): string[] {
+  if (!Array.isArray(item.commandActions)) return [];
+  return item.commandActions
+    .map((action) => codexString(codexRecord(action)?.type))
+    .filter((type): type is string => type !== undefined);
+}
+
+function commandContainsSearch(command: string | undefined): boolean {
+  if (!command) return false;
+  // The command may be wrapped by PowerShell (`powershell -Command ...`), so
+  // match a search executable after a shell separator as well as at the start.
+  return /(?:^|[\s;&|])((?:rg|grep)(?:\.exe)?|select-string)(?:\s|$)/i.test(shellScriptBody(command));
+}
+
+function commandContainsList(command: string | undefined): boolean {
+  if (!command) return false;
+  const script = shellScriptBody(command);
+  return /(?:^|[\s;&|])rg(?:\.exe)?\s+[^\r\n]*--files(?:\s|$)/i.test(script)
+    || /(?:^|[\s;&|])(?:find|dir|ls|get-childitem)(?:\.exe)?(?:\s|$)/i.test(script);
+}
+
+function shellScriptBody(command: string): string {
+  // Codex commonly reports `powershell -Command "..."` or `bash -c '...'`.
+  // Scan the script argument itself so its outer transport quotes do not hide
+  // real separators while quoted regexes such as "foo|bar" remain intact.
+  const wrapped = command.match(/(?:^|\s)(?:-(?:command|c)|\/c)\s+(["'])([\s\S]*)\1\s*$/i);
+  return wrapped?.[2] ?? command;
+}
+
+function isCompoundCommand(command: string | undefined): boolean {
+  if (!command) return false;
+  // A non-zero status belongs to the whole shell expression. Do not turn an
+  // unrelated failing command into a search miss just because `rg` appears
+  // later in a semicolon/pipeline chain.
+  const script = shellScriptBody(command);
+  let quote: "\"" | "'" | undefined;
+  for (let index = 0; index < script.length; index += 1) {
+    const character = script[index];
+    const escaped = index > 0 && ["\\", "`", "^"].includes(script[index - 1] ?? "");
+    if (quote) {
+      if (character === quote && !escaped) quote = undefined;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === ";" || character === "|" || character === "&" || character === "\n" || character === "\r") return true;
+  }
+  return false;
+}
+
+const powerShellDiagnosticMarker = /^(?:at line:|所在位置(?:\s|$)|parsererror\s*:|\+\s*(?:categoryinfo|fullyqualifiederrorid)\s*:|(?:categoryinfo|fullyqualifiederrorid)\s*:)/i;
+
+function hasPowerShellDiagnosticContext(lines: string[]): boolean {
+  return lines.some((line) => powerShellDiagnosticMarker.test(line.trim()));
+}
+
+function isCommandDiagnosticLine(line: string, powerShellDiagnosticContext: boolean): boolean {
+  const value = line.trim();
+  if (!value) return true;
+  if (/^__(?:RG|OPENRIGOR)_EXIT_CODE__\s*=\s*-?\d+$/i.test(value)) return true;
+  if (powerShellDiagnosticMarker.test(value)) return true;
+  if (/^warning\s*:/i.test(value)) return true;
+  if (powerShellDiagnosticContext) {
+    // PowerShell renders the failing command, source line, and caret marker as
+    // ordinary text in the aggregated stream. Only interpret these shapes as
+    // diagnostics when the record also contains its structured error footer.
+    if (/^[+~]/.test(value)) return true;
+    if (/^(?:[A-Za-z0-9_.-]+\\)?(?:[A-Za-z0-9_.]+-[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\.exe)\s*:\s+/i.test(value)) return true;
+  }
+  if (/^(?:rg|grep|select-string|get-childitem|find|dir|ls|get-content|powershell)(?:\.exe)?\s*:/i.test(value)) return true;
+  if (/^.*:\s*(?:system cannot find|the system cannot find|cannot find|not found|access is denied|拒绝访问|系统找不到|无法找到|未找到)/i.test(value)) return true;
+  if (/\(\s*os error \d+\)\s*$/i.test(value)) return true;
+  return false;
+}
+
+function hasUsableCommandOutput(output: string | undefined): boolean {
+  if (!output?.trim()) return false;
+  const lines = output.split(/\r?\n/);
+  const powerShellDiagnosticContext = hasPowerShellDiagnosticContext(lines);
+  return lines.some((line) => !isCommandDiagnosticLine(line, powerShellDiagnosticContext));
+}
+
+function codexErrorDiagnostic(item: Record<string, unknown>): string | undefined {
+  const error = item.error;
+  if (typeof error === "string") return safeCodexText(error, 400);
+  const errorRecord = codexRecord(error);
+  if (!errorRecord) return undefined;
+  const message = codexString(errorRecord.message) ?? codexString(errorRecord.details) ?? codexString(errorRecord.code);
+  return message === undefined ? undefined : safeCodexText(message, 400);
+}
+
+/**
+ * Classify a completed Codex item without changing the legacy lifecycle phase.
+ * The provider uses non-zero exit codes for both expected search misses and
+ * genuine failures, so command actions are used to constrain the exceptions.
+ */
+export function classifyCodexToolOutcome(item: Record<string, unknown>, output?: string): CodexToolOutcome | undefined {
+  const status = codexString(item.status);
+  if (status === "inProgress") return undefined;
+
+  const exitCode = codexReportedExitCode(item, output);
+  const durationMs = codexNumber(item.durationMs);
+  if (status === "declined") {
+    return { outcome: "declined", ...(exitCode === undefined ? {} : { exitCode }), ...(durationMs === undefined ? {} : { durationMs }), diagnostic: "工具调用被拒绝" };
+  }
+
+  const command = codexString(item.command);
+  const actionTypes = codexCommandActionTypes(item);
+  const searchLike = actionTypes.includes("search") || commandContainsSearch(command);
+  const listLike = actionTypes.includes("listFiles") || commandContainsList(command);
+  const visibleOutput = output === undefined ? undefined : cleanCodexToolOutput(output, item.type === "commandExecution");
+  const standaloneSearchOrList = (searchLike || listLike)
+    && actionTypes.length <= 1
+    && !isCompoundCommand(command);
+
+  if (exitCode === 1 && standaloneSearchOrList && !visibleOutput) {
+    return {
+      outcome: "no-result",
+      exitCode,
+      ...(durationMs === undefined ? {} : { durationMs }),
+      diagnostic: "未找到匹配结果（退出码 1）"
+    };
+  }
+  if (exitCode !== undefined && exitCode !== 0 && (searchLike || listLike) && hasUsableCommandOutput(visibleOutput)) {
+    return {
+      outcome: "partial",
+      exitCode,
+      ...(durationMs === undefined ? {} : { durationMs }),
+      diagnostic: `命令返回退出码 ${exitCode}，但产生了部分输出`
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      outcome: "error",
+      ...(exitCode === undefined ? {} : { exitCode }),
+      ...(durationMs === undefined ? {} : { durationMs }),
+      diagnostic: codexErrorDiagnostic(item) ?? (exitCode === undefined ? "工具执行失败" : `命令返回退出码 ${exitCode}`)
+    };
+  }
+
+  // Completed items normally have exitCode 0. Treat an inconsistent non-zero
+  // code as an error rather than hiding a provider/runtime contract violation.
+  if (exitCode !== undefined && exitCode !== 0) {
+    return {
+      outcome: "error",
+      exitCode,
+      ...(durationMs === undefined ? {} : { durationMs }),
+      diagnostic: `命令报告已完成但退出码为 ${exitCode}`
+    };
+  }
+  return {
+    outcome: "success",
+    ...(exitCode === undefined ? {} : { exitCode }),
+    ...(durationMs === undefined ? {} : { durationMs })
+  };
 }
 
 function publishCodexItem(record: RunRecord, item: Record<string, unknown>, started: boolean): void {
@@ -366,11 +573,16 @@ function publishCodexItem(record: RunRecord, item: Record<string, unknown>, star
   const phase = codexToolPhase(item, started);
   const outputSummary = started ? existing?.outputSummary : codexToolOutput(item) ?? existing?.outputSummary;
   const inputSummary = info.inputSummary ?? existing?.inputSummary;
+  const outcome = started ? undefined : classifyCodexToolOutcome(item, outputSummary);
   const tool: ToolCall = {
     callId: itemId,
     name: info.name,
     phase,
     ...(outputSummary === undefined ? {} : { outputSummary }),
+    ...(outcome?.outcome === undefined ? {} : { outcome: outcome.outcome }),
+    ...(outcome?.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),
+    ...(outcome?.durationMs === undefined ? {} : { durationMs: outcome.durationMs }),
+    ...(outcome?.diagnostic === undefined ? {} : { diagnostic: outcome.diagnostic }),
     startedAt,
     ...(started ? {} : { finishedAt: timestamp() })
   };

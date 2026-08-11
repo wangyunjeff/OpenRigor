@@ -7,6 +7,11 @@ test("maps OpenRigor runtime states to AI Elements states", () => {
   assert.equal(toolPhaseToAiState("running"), "input-available");
   assert.equal(toolPhaseToAiState("succeeded"), "output-available");
   assert.equal(toolPhaseToAiState("failed"), "output-error");
+  assert.equal(toolPhaseToAiState("succeeded", "no-result"), "output-available");
+  assert.equal(toolPhaseToAiState("succeeded", "partial"), "output-available");
+  assert.equal(toolPhaseToAiState("failed", "no-result"), "output-available");
+  assert.equal(toolPhaseToAiState("failed", "partial"), "output-available");
+  assert.equal(toolPhaseToAiState("failed", "declined"), "output-denied");
   assert.equal(runStatusToChatStatus("queued"), "submitted");
   assert.equal(runStatusToChatStatus("waiting_tool"), "streaming");
   assert.equal(runStatusToChatStatus("waiting_user"), "streaming");
