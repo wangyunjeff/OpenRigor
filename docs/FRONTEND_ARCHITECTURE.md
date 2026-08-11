@@ -16,7 +16,7 @@ OpenRigor keeps runtime truth separate from presentation libraries. `packages/pr
 - Keep server and protocol changes additive; UI-library types must not leak into `packages/protocol`.
 - Use AI Elements through the configured `@ai-elements` shadcn registry, then adapt its styling through OpenRigor tokens.
 - Keep composer command discovery in `features/composer`; the slash/at palette must expose stable option ids and let the focused textarea publish `aria-activedescendant` while keyboard navigation is active.
-- Render execution from the ordered `projectRunEvents().activities` timeline. Merge repeated tool lifecycle events by `callId`, keep rows collapsed by default, and let only `error`/`declined` outcomes auto-expand. `no-result` and `partial` are status treatments, not run-level failures.
+- Render conversation flow from the ordered `projectRunEvents().timeline`: provider message boundaries split adjacent reasoning/tool/file/subagent/error activities into collapsible execution groups, so commentary and work remain interleaved. Merge repeated tool lifecycle events by `callId`, keep successful rows collapsed by default, and let only `error`/`declined` outcomes auto-expand. `no-result` and `partial` are status treatments, not run-level failures.
 - Do not expose an AI Elements control until its data has a real OpenRigor backend contract. Attachments, approvals, sources, and queued prompts remain hidden until their protocol paths exist.
 
 ## Theme boundary

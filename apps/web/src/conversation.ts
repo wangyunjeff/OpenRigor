@@ -50,6 +50,16 @@ export interface ReasoningProjection {
   firstIndex: number;
 }
 
+export interface AssistantMessageProjection {
+  /** Provider item id mapped into a stable OpenRigor part id. */
+  partId: string;
+  text: string;
+  firstAt: string;
+  lastAt: string;
+  firstIndex: number;
+  done: boolean;
+}
+
 export type RunActivity =
   | { kind: "reasoning"; projection: ReasoningProjection }
   | { kind: "tool"; projection: ToolProjection }
@@ -58,8 +68,19 @@ export type RunActivity =
   | { kind: "diff"; event: Extract<RunEvent, { type: "part" }>; firstIndex: number }
   | { kind: "error"; event: Extract<RunEvent, { type: "error" }>; firstIndex: number };
 
+export type RunTimelineItem =
+  | { kind: "message"; projection: AssistantMessageProjection }
+  | RunActivity;
+
+export type RunTimelineSegment =
+  | { kind: "message"; projection: AssistantMessageProjection }
+  | { kind: "reasoning"; projection: ReasoningProjection }
+  | { kind: "execution"; id: string; activities: RunActivity[] };
+
 export interface RunProjection {
+  /** Latest provider message, used as the final visible answer and copy target. */
   answer: string;
+  messages: AssistantMessageProjection[];
   reasoning: string;
   reasoningProjection?: ReasoningProjection;
   toolOutput: Map<string, string>;
@@ -70,12 +91,39 @@ export interface RunProjection {
   errors: Array<Extract<RunEvent, { type: "error" }>>;
   /** Activities ordered by their first provider event, with tool lifecycles merged. */
   activities: RunActivity[];
+  /** Provider messages and execution activities in their original interleaved order. */
+  timeline: RunTimelineItem[];
   usage: UsageSummary | undefined;
 }
 
 export function cleanHistoryPrompt(prompt: string): string {
   const marker = prompt.lastIndexOf("\n\nTask:\n");
   return marker >= 0 ? prompt.slice(marker + "\n\nTask:\n".length) : prompt;
+}
+
+function runActivityId(activity: RunActivity): string {
+  if (activity.kind === "reasoning") return `reasoning:${activity.projection.partId}`;
+  if (activity.kind === "tool") return `tool:${activity.projection.event.tool.callId}`;
+  if (activity.kind === "subagent") return `subagent:${activity.projection.event.subagent.subagentRunId}`;
+  return `${activity.kind}:${activity.event.eventId}`;
+}
+
+export function segmentRunTimeline(timeline: RunTimelineItem[]): RunTimelineSegment[] {
+  const segments: RunTimelineSegment[] = [];
+  for (const item of timeline) {
+    if (item.kind === "message") {
+      segments.push(item);
+      continue;
+    }
+    if (item.kind === "reasoning") {
+      segments.push(item);
+      continue;
+    }
+    const previous = segments.at(-1);
+    if (previous?.kind === "execution") previous.activities.push(item);
+    else segments.push({ kind: "execution", id: `execution:${runActivityId(item)}`, activities: [item] });
+  }
+  return segments;
 }
 
 export function restoreConversation(payload: ConversationRestorePayload): ConversationViewState | null {
@@ -150,7 +198,7 @@ export function applyRunEvent(conversation: ConversationViewState, event: RunEve
 }
 
 export function projectRunEvents(events: RunEvent[]): RunProjection {
-  const answerParts = new Map<string, string>();
+  const answerParts = new Map<string, AssistantMessageProjection>();
   const reasoningParts = new Map<string, string>();
   const reasoningMeta = new Map<string, { firstAt: string; lastAt: string; firstIndex: number }>();
   const toolOutput = new Map<string, string>();
@@ -162,9 +210,28 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
   const activities = new Map<string, RunActivity>();
   let usage: UsageSummary | undefined;
 
+  const recordAnswer = (
+    partId: string,
+    text: string,
+    event: RunEvent,
+    index: number,
+    append: boolean,
+    done: boolean
+  ): void => {
+    const previous = answerParts.get(partId);
+    answerParts.set(partId, {
+      partId,
+      text: append ? `${previous?.text ?? ""}${text}` : text,
+      firstAt: previous?.firstAt ?? event.ts,
+      lastAt: event.ts,
+      firstIndex: previous?.firstIndex ?? index,
+      done
+    });
+  };
+
   const recordReasoning = (partId: string, text: string, event: RunEvent, index: number, append: boolean): void => {
     if (append) reasoningParts.set(partId, `${reasoningParts.get(partId) ?? ""}${text}`);
-    else if (!reasoningParts.has(partId)) reasoningParts.set(partId, text);
+    else reasoningParts.set(partId, text);
     const previous = reasoningMeta.get(partId);
     reasoningMeta.set(partId, {
       firstAt: previous?.firstAt ?? event.ts,
@@ -179,7 +246,7 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
         const callId = event.partId.slice(5);
         toolOutput.set(callId, `${toolOutput.get(callId) ?? ""}${event.delta}`);
       } else if (event.kind === "text") {
-        answerParts.set(event.partId, `${answerParts.get(event.partId) ?? ""}${event.delta}`);
+        recordAnswer(event.partId, event.delta, event, index, true, false);
       } else {
         recordReasoning(event.partId, event.delta, event, index, true);
       }
@@ -198,9 +265,12 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
           event,
           firstIndex: previous?.kind === "diff" ? previous.firstIndex : index
         });
-      } else if (event.part.kind === "text" && !answerParts.has(event.part.partId)) {
-        answerParts.set(event.part.partId, event.part.text);
-      } else if (event.part.kind === "reasoning" && !reasoningParts.has(event.part.partId)) {
+      } else if (event.part.kind === "text") {
+        // A complete part is authoritative for its id. Replacing the streamed
+        // value also repairs replay from older adapters that reused `answer`
+        // across multiple provider messages.
+        recordAnswer(event.part.partId, event.part.text, event, index, false, event.part.done ?? true);
+      } else if (event.part.kind === "reasoning") {
         recordReasoning(event.part.partId, event.part.text, event, index, false);
       }
       return;
@@ -268,8 +338,28 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
     : undefined;
   for (const block of reasoningBlocks) activities.set(`reasoning:${block.partId}`, { kind: "reasoning", projection: block });
 
+  const messages = [...answerParts.values()]
+    .filter((message) => message.text.length > 0)
+    .sort((left, right) => left.firstIndex - right.firstIndex);
+  const orderedActivities = [...activities.values()].sort((left, right) => {
+    const leftIndex = left.kind === "tool" || left.kind === "subagent" ? left.projection.firstIndex : left.kind === "reasoning" ? left.projection.firstIndex : left.firstIndex;
+    const rightIndex = right.kind === "tool" || right.kind === "subagent" ? right.projection.firstIndex : right.kind === "reasoning" ? right.projection.firstIndex : right.firstIndex;
+    return leftIndex - rightIndex;
+  });
+  const timeline: RunTimelineItem[] = [
+    ...messages.map((projection): RunTimelineItem => ({ kind: "message", projection })),
+    ...orderedActivities
+  ].sort((left, right) => {
+    const indexOf = (item: RunTimelineItem): number => {
+      if (item.kind === "message" || item.kind === "reasoning" || item.kind === "tool" || item.kind === "subagent") return item.projection.firstIndex;
+      return item.firstIndex;
+    };
+    return indexOf(left) - indexOf(right);
+  });
+
   return {
-    answer: [...answerParts.values()].join("\n\n"),
+    answer: messages.at(-1)?.text ?? "",
+    messages,
     reasoning,
     ...(reasoningProjection === undefined ? {} : { reasoningProjection }),
     toolOutput,
@@ -278,11 +368,8 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
     files,
     subagents: [...projectedSubagents.values()].sort((left, right) => left.firstIndex - right.firstIndex),
     errors,
-    activities: [...activities.values()].sort((left, right) => {
-      const leftIndex = left.kind === "tool" || left.kind === "subagent" ? left.projection.firstIndex : left.kind === "reasoning" ? left.projection.firstIndex : left.firstIndex;
-      const rightIndex = right.kind === "tool" || right.kind === "subagent" ? right.projection.firstIndex : right.kind === "reasoning" ? right.projection.firstIndex : right.firstIndex;
-      return leftIndex - rightIndex;
-    }),
+    activities: orderedActivities,
+    timeline,
     usage
   };
 }

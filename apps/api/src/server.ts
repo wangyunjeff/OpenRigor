@@ -217,6 +217,11 @@ function codexNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+export function codexMessagePartId(value: unknown): string {
+  const itemId = codexString(value);
+  return itemId === undefined ? "answer" : `answer:${itemId}`;
+}
+
 function codexFlattenText(value: unknown, depth = 0): string {
   if (depth > 5 || value === null || value === undefined) return "";
   if (typeof value === "string") return value;
@@ -626,9 +631,9 @@ function handleCodexNotification(record: RunRecord, notification: CodexNotificat
     const delta = safeCodexText(params.delta, 8_000);
     if (delta) {
       publishCodexStatus(record, "running", { progress: 55, currentStep: "Streaming answer" });
-      // Protocol v0 consumers already aggregate the primary assistant stream
-      // under the stable `answer` part id.
-      publishTextDelta(record, "answer", "text", delta);
+      // Keep provider message boundaries so commentary before a tool call and
+      // the final response can be replayed at their original timeline slots.
+      publishTextDelta(record, codexMessagePartId(params.itemId), "text", delta);
     }
     return;
   }
@@ -653,7 +658,7 @@ function handleCodexNotification(record: RunRecord, notification: CodexNotificat
     const itemType = codexString(item.type);
     if (method === "item/completed" && itemType === "agentMessage") {
       const text = safeCodexText(item.text, 32_000);
-      if (text) publish(record, { ...baseEvent(record, "part"), type: "part", part: { partId: "answer", kind: "text", text, done: true } });
+      if (text) publish(record, { ...baseEvent(record, "part"), type: "part", part: { partId: codexMessagePartId(codexItemId(item)), kind: "text", text, done: true } });
     }
     if (method === "item/completed" && itemType === "reasoning") {
       const text = safeCodexText(codexFlattenText(item.summary) || codexFlattenText(item.content), 32_000);

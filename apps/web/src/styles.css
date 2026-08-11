@@ -302,7 +302,8 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 
 /* Conversation */
 .conversation-view { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; }
-.ai-conversation { width: 100%; max-width: 800px; min-width: 0; min-height: 0; flex: 0 1 800px; }
+/* StickToBottom.Content owns scrolling; keep the outer wrapper from becoming a second scroll container. */
+.ai-conversation { width: 100%; max-width: 800px; min-width: 0; min-height: 0; flex: 0 1 800px; overflow: hidden; }
 .conversation-scroll { width: min(768px, calc(100% - 36px)); min-width: 0; overflow-y: auto; padding: 24px 16px 172px; }
 .ai-conversation .conversation-scroll { width: min(768px, 100%); margin: 0 auto; }
 .conversation-column { display: flex; flex-direction: column; gap: 0; }
@@ -315,6 +316,15 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 .assistant-turn { min-width: 0; }
 .openrigor-message { width: 100%; max-width: 100%; }
 .openrigor-message.user-turn { margin-left: 0; }
+.run-timeline { min-width: 0; display: grid; gap: 0; }
+.assistant-message-step { min-width: 0; }
+.assistant-message-step.is-commentary { margin-top: 17px; }
+.assistant-commentary { width: 100%; color: var(--text-soft); font-size: 14px; line-height: 1.75; }
+.assistant-commentary > div:first-child { width: 100%; overflow-wrap: anywhere; }
+.assistant-commentary :where(p, ul, ol, blockquote, pre, table) { margin: 0 0 12px; }
+.assistant-commentary :where(ul, ol) { padding-left: 21px; }
+.assistant-commentary :where(p, ul, ol, blockquote, pre, table):last-child { margin-bottom: 0; }
+.assistant-reasoning-step { margin-top: 8px; }
 .assistant-heading { min-height: 29px; gap: 9px; }
 .assistant-heading > span:nth-child(2) { min-width: 0; display: flex; align-items: center; gap: 9px; }
 .assistant-heading strong { color: var(--text-soft); font-size: 13px; font-weight: 650; }

@@ -115,7 +115,7 @@ The local alpha keeps the public `RunEvent` contract stable while adapting the C
 
 | Codex notification | OpenRigor event |
 |---|---|
-| `item/agentMessage/delta` | `part-delta(kind=text)` |
+| `item/agentMessage/delta` | `part-delta(kind=text)` with a provider-item-scoped `partId` |
 | `item/reasoning/summaryTextDelta`, `item/reasoning/textDelta` | `part-delta(kind=reasoning)` |
 | `item/started`, `item/completed` for command/file/search items | `tool` and `file` |
 | `item/commandExecution/outputDelta` | tool-scoped `part-delta` |
@@ -123,6 +123,12 @@ The local alpha keeps the public `RunEvent` contract stable while adapting the C
 | `turn/completed` | `run-finished` |
 
 Unknown provider notifications are ignored by the adapter and never forwarded verbatim. This prevents provider-specific payloads or credentials from becoming part of the browser-facing contract.
+
+Agent messages retain their provider item boundary (`answer:<itemId>`). This lets
+clients replay commentary before a tool call, execution activity, and the final
+answer in their original order instead of concatenating independent messages.
+The completed `part` remains authoritative for its `partId`, as required by the
+event table above.
 
 ### Tool result semantics
 

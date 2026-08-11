@@ -47,7 +47,15 @@ import {
 import { Terminal } from "../../components/ai-elements/terminal";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../components/ui/collapsible";
-import { projectRunEvents, type ConversationRunView, type ReasoningProjection, type RunActivity, type ToolProjection } from "../../conversation";
+import {
+  projectRunEvents,
+  segmentRunTimeline,
+  type AssistantMessageProjection,
+  type ConversationRunView,
+  type ReasoningProjection,
+  type RunActivity,
+  type ToolProjection
+} from "../../conversation";
 import {
   executionOpenTransition,
   formatToolDuration,
@@ -181,7 +189,7 @@ function ReasoningStep({ projection, isStreaming }: { projection: ReasoningProje
     setOpen(isStreaming);
   }, [isStreaming]);
 
-  return <AnimatedStep>
+  return <AnimatedStep className="assistant-reasoning-step">
     <Reasoning className="openrigor-reasoning" isStreaming={isStreaming} open={open} onOpenChange={setOpen} {...(duration === undefined ? {} : { duration })}>
       <ReasoningTrigger getThinkingMessage={(streaming, seconds) => <span>{streaming ? "正在深度思考" : seconds ? `思考 · ${seconds}s` : "思考过程"}</span>}><BrainCircuit aria-hidden="true" /><span>{isStreaming ? "正在深度思考" : duration ? `思考 · ${duration}s` : "思考过程"}</span></ReasoningTrigger>
       <ReasoningContent>{projection.text}</ReasoningContent>
@@ -258,6 +266,76 @@ function ActivitySubagent({ event, snapshot }: { event: Extract<RunActivity, { k
   return <AnimatedStep><Agent className="openrigor-agent"><AgentHeader name={event.subagent.label} model={snapshot.routing === "tokenresearch" ? "Luna Max" : "Subagent"} /><AgentContent><span className={`subagent-status status-${event.subagent.status}`}><span />{statusLabel(event.subagent.status)}</span><code>{compactId(event.subagent.subagentRunId)}</code></AgentContent></Agent></AnimatedStep>;
 }
 
+function AssistantMessageStep({
+  projection,
+  isStreaming,
+  isFinal,
+  copied,
+  onCopy
+}: {
+  projection: AssistantMessageProjection;
+  isStreaming: boolean;
+  isFinal: boolean;
+  copied: boolean;
+  onCopy: (answer: string) => void;
+}): ReactElement {
+  return <AnimatedStep className={isFinal ? "assistant-message-step is-final" : "assistant-message-step is-commentary"}>
+    <MessageContent className={isFinal ? "answer-block" : "assistant-commentary"}>
+      <MessageResponse isAnimating={isStreaming}>{projection.text}</MessageResponse>
+      {isFinal ? <MessageActions className="answer-actions"><MessageAction tooltip="复制回答" label="复制回答" onClick={() => onCopy(projection.text)}><Copy aria-hidden="true" /><span>{copied ? "已复制" : "复制回答"}</span></MessageAction></MessageActions> : null}
+    </MessageContent>
+  </AnimatedStep>;
+}
+
+function ExecutionGroup({
+  id,
+  activities,
+  snapshot,
+  toolOutput,
+  nowMs,
+  connection,
+  current
+}: {
+  id: string;
+  activities: RunActivity[];
+  snapshot: RunSnapshot;
+  toolOutput: Map<string, string>;
+  nowMs: number;
+  connection: ConnectionState;
+  current: boolean;
+}): ReactElement {
+  const isWorking = isActivelyWorkingStatus(snapshot.status);
+  const hasFailure = activities.some((activity) => {
+    if (activity.kind === "error") return !activity.event.retryable;
+    if (activity.kind !== "tool") return false;
+    const outcome = toolOutcome(activity.projection);
+    return outcome === "error" || outcome === "declined";
+  });
+  const autoOpen = current || hasFailure;
+  const [open, setOpen] = useState(autoOpen);
+  const previousOpenRef = useRef<{ runId: string; isRunning: boolean }>({ runId: id, isRunning: autoOpen });
+
+  useEffect(() => {
+    const previous = previousOpenRef.current;
+    const nextOpen = executionOpenTransition(previous, { runId: id, isRunning: autoOpen });
+    if (nextOpen !== undefined) setOpen(nextOpen);
+    previousOpenRef.current = { runId: id, isRunning: autoOpen };
+  }, [autoOpen, id]);
+
+  return <Collapsible className="execution-group" open={open} onOpenChange={setOpen}>
+    <CollapsibleTrigger asChild><button type="button" className="execution-summary" aria-label={open ? "收起执行过程" : "展开执行过程"}><Activity aria-hidden="true" /><span>{current && isWorking ? `正在执行 · ${activities.length} 个步骤` : current && snapshot.status === "waiting_user" ? `等待继续 · ${activities.length} 个步骤` : `执行了 ${activities.length} 个步骤`}</span><span className="execution-chevron" aria-hidden="true">⌄</span></button></CollapsibleTrigger>
+    <CollapsibleContent className="execution-content ai-execution-content">
+      {activities.map((activity) => {
+        if (activity.kind === "reasoning") return null;
+        if (activity.kind === "tool") return <ToolStep key={`tool-${activity.projection.event.tool.callId}`} projection={activity.projection} output={activity.projection.event.tool.outputSummary ?? toolOutput.get(activity.projection.event.tool.callId)} nowMs={nowMs} active={current && isWorking && connection === "open"} />;
+        if (activity.kind === "subagent") return <ActivitySubagent key={`subagent-${activity.projection.event.subagent.subagentRunId}`} event={activity.projection.event} snapshot={snapshot} />;
+        if (activity.kind === "file" || activity.kind === "diff") return <ActivityArtifact key={`${activity.kind}-${activity.event.eventId}`} activity={activity} />;
+        return <ActivityError key={`error-${activity.event.eventId}`} event={activity.event} />;
+      })}
+    </CollapsibleContent>
+  </Collapsible>;
+}
+
 function CompletionLine({ elapsed, updatedAt, usage }: { elapsed: string; updatedAt: string; usage: UsageSummary | undefined }): ReactElement {
   const completionRef = useRef<HTMLDivElement>(null);
   useGSAP(() => {
@@ -278,7 +356,7 @@ function CompletionLine({ elapsed, updatedAt, usage }: { elapsed: string; update
 }
 
 export function RunTurn({ run, copied, onCopy, connection }: { run: ConversationRunView; copied: boolean; onCopy: (runId: string, answer: string) => void; connection: ConnectionState }): ReactElement {
-  const { answer, toolOutput, activities, usage } = useMemo(() => projectRunEvents(run.events), [run.events]);
+  const { messages, toolOutput, timeline, usage } = useMemo(() => projectRunEvents(run.events), [run.events]);
   const snapshot = run.snapshot;
   const isRunning = !isTerminalStatus(snapshot.status);
   const isWorking = isActivelyWorkingStatus(snapshot.status);
@@ -290,23 +368,11 @@ export function RunTurn({ run, copied, onCopy, connection }: { run: Conversation
     : connection === "connecting"
       ? { ...activity, animated: true, stale: false, headline: "正在恢复实时状态", detail: "正在重新连接事件流" }
       : { ...activity, animated: false, stale: false, headline: "实时状态未连接", detail: "任务可能仍在后台运行" };
-  // Keep the summary available after completion, but collapse the detailed
-  // rail once streaming settles.
-  const [executionOpen, setExecutionOpen] = useState(isRunning);
-  const activityCount = activities.length;
-  const latestReasoningPartId = activities.reduce<string | undefined>(
-    (latest, item) => item.kind === "reasoning" ? item.projection.partId : latest,
-    undefined
-  );
-  const previousExecutionRef = useRef<{ runId: string; isRunning: boolean }>({ runId: snapshot.runId, isRunning });
-
-  useEffect(() => {
-    const previous = previousExecutionRef.current;
-    const nextOpen = executionOpenTransition(previous, { runId: snapshot.runId, isRunning });
-    if (nextOpen !== undefined) setExecutionOpen(nextOpen);
-    previousExecutionRef.current = { runId: snapshot.runId, isRunning };
-  }, [isRunning, snapshot.runId]);
-
+  const timelineSegments = useMemo(() => segmentRunTimeline(timeline), [timeline]);
+  const latestTimelineSegment = timelineSegments.at(-1);
+  const activeExecutionId = isRunning && latestTimelineSegment?.kind === "execution" ? latestTimelineSegment.id : undefined;
+  const latestMessagePartId = messages.at(-1)?.partId;
+  const activeReasoningPartId = isWorking && latestTimelineSegment?.kind === "reasoning" ? latestTimelineSegment.projection.partId : undefined;
   return <section className="conversation-turn" data-run-id={run.runId}>
     <Message from="user" className="openrigor-message user-turn">
       <MessageContent className="user-bubble">{run.visiblePrompt}</MessageContent>
@@ -318,20 +384,13 @@ export function RunTurn({ run, copied, onCopy, connection }: { run: Conversation
 
       {isRunning ? <RunActivityIndicator view={visibleActivity} status={snapshot.status} /> : null}
 
-      {activityCount ? <Collapsible className="execution-group" open={executionOpen} onOpenChange={setExecutionOpen}>
-        <CollapsibleTrigger asChild><button type="button" className="execution-summary" aria-label={executionOpen ? "收起执行过程" : "展开执行过程"}><Activity aria-hidden="true" /><span>{isWorking ? `正在执行 · ${activityCount} 个步骤` : snapshot.status === "waiting_user" ? `等待继续 · ${activityCount} 个步骤` : `执行了 ${activityCount} 个步骤`}</span><span className="execution-chevron" aria-hidden="true">⌄</span></button></CollapsibleTrigger>
-        <CollapsibleContent className="execution-content ai-execution-content">
-          {activities.map((activity) => {
-            if (activity.kind === "reasoning") return <ReasoningStep key={`reasoning-${activity.projection.partId}`} projection={activity.projection} isStreaming={isWorking && activity.projection.partId === latestReasoningPartId} />;
-            if (activity.kind === "tool") return <ToolStep key={`tool-${activity.projection.event.tool.callId}`} projection={activity.projection} output={activity.projection.event.tool.outputSummary ?? toolOutput.get(activity.projection.event.tool.callId)} nowMs={nowMs} active={isWorking && connection === "open"} />;
-            if (activity.kind === "subagent") return <ActivitySubagent key={`subagent-${activity.projection.event.subagent.subagentRunId}`} event={activity.projection.event} snapshot={snapshot} />;
-            if (activity.kind === "file" || activity.kind === "diff") return <ActivityArtifact key={`${activity.kind}-${activity.event.eventId}`} activity={activity} />;
-            return <ActivityError key={`error-${activity.event.eventId}`} event={activity.event} />;
-          })}
-        </CollapsibleContent>
-      </Collapsible> : null}
-
-      {answer ? <MessageContent className="answer-block"><MessageResponse isAnimating={isWorking}>{answer}</MessageResponse><MessageActions className="answer-actions"><MessageAction tooltip="复制回答" label="复制回答" onClick={() => onCopy(run.runId, answer)}><Copy aria-hidden="true" /><span>{copied ? "已复制" : "复制回答"}</span></MessageAction></MessageActions></MessageContent> : null}
+      {timelineSegments.length ? <div className="run-timeline">
+        {timelineSegments.map((segment) => segment.kind === "message"
+          ? <AssistantMessageStep key={`message-${segment.projection.partId}`} projection={segment.projection} isStreaming={isWorking && !segment.projection.done && segment.projection.partId === latestMessagePartId} isFinal={segment.projection.partId === latestMessagePartId} copied={copied} onCopy={(answer) => onCopy(run.runId, answer)} />
+          : segment.kind === "reasoning"
+            ? <ReasoningStep key={`reasoning-${segment.projection.partId}`} projection={segment.projection} isStreaming={segment.projection.partId === activeReasoningPartId} />
+            : <ExecutionGroup key={segment.id} id={`${snapshot.runId}:${segment.id}`} activities={segment.activities} snapshot={snapshot} toolOutput={toolOutput} nowMs={nowMs} connection={connection} current={segment.id === activeExecutionId} />)}
+      </div> : null}
       {snapshot.status === "completed" ? <CompletionLine elapsed={activity.elapsed} updatedAt={snapshot.updatedAt} usage={usage} /> : null}
     </Message>
   </section>;

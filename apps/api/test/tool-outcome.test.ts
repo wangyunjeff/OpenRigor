@@ -7,7 +7,7 @@ import { once } from "node:events";
 // close that listener when the focused unit tests finish.
 process.env.PORT = "0";
 process.env.OPENRIGOR_EXECUTOR = "demo";
-const { classifyCodexToolOutcome, server } = await import("../src/server.js");
+const { classifyCodexToolOutcome, codexMessagePartId, server } = await import("../src/server.js");
 if (!server.listening) await once(server, "listening");
 
 after(async () => {
@@ -17,6 +17,11 @@ after(async () => {
 
 const searchAction = { type: "search", command: "rg", query: "needle", path: "." };
 const listAction = { type: "listFiles", command: "rg --files", path: "." };
+
+test("preserves provider agent-message boundaries in public part ids", () => {
+  assert.equal(codexMessagePartId("item_before_tool"), "answer:item_before_tool");
+  assert.equal(codexMessagePartId(undefined), "answer");
+});
 
 test("classifies an rg exit-1 search miss as no-result", () => {
   assert.deepEqual(
