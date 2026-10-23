@@ -111,6 +111,30 @@ export interface FileArtifact {
   sha256?: string;
   revision: number;
   downloadUrl?: string;
+  /** Validated path relative to this run's workspace. */
+  path?: string;
+  /** JSON text preview endpoint; never executable HTML. */
+  contentUrl?: string;
+  /** Only server-verified raster images or PDF may receive an inline URL. */
+  previewUrl?: string;
+}
+
+export interface PlanStep {
+  step: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+/** A source observed in an actual provider web-search result or page action. */
+export interface RunSource {
+  sourceId: string;
+  url: string;
+  title: string;
+  snippet?: string;
+  toolCallId?: string;
+  query?: string;
+  origin: "web-search";
+  /** Search metadata versus an attempted page action; neither implies verification. */
+  kind?: "search-result" | "page-request";
 }
 
 export interface UsageSummary {
@@ -151,6 +175,8 @@ export type PartDeltaEvent = EventBase<"part-delta"> & {
 };
 export type ToolEvent = EventBase<"tool"> & { tool: ToolCall };
 export type FileEvent = EventBase<"file"> & { file: FileArtifact };
+export type PlanEvent = EventBase<"plan"> & { steps: PlanStep[]; explanation?: string; provenance?: "provider" | "tool" };
+export type SourceEvent = EventBase<"source"> & { source: RunSource };
 export type SubagentEvent = EventBase<"subagent"> & { subagent: SubagentSummary };
 export type FinishedEvent = EventBase<"run-finished"> & {
   status: Extract<RunStatus, "completed" | "failed" | "cancelled">;
@@ -170,6 +196,8 @@ export type RunEvent =
   | PartDeltaEvent
   | ToolEvent
   | FileEvent
+  | PlanEvent
+  | SourceEvent
   | SubagentEvent
   | FinishedEvent
   | ErrorEvent;

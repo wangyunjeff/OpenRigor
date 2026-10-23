@@ -1,0 +1,19 @@
+.file-pdf-reader { min-width: 0; min-height: 420px; background: var(--surface-soft); }
+.file-pdf-toolbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; min-height: 46px; padding: 7px 14px; border-block: 1px solid var(--line); background: var(--surface-raised); }
+.file-pdf-controls { display: flex; align-items: center; gap: 4px; }
+.file-pdf-controls button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; min-width: 28px; height: 28px; padding: 4px; border: 0; border-radius: 5px; color: var(--muted); background: transparent; font: 11px/1.2 var(--sans); }
+.file-pdf-controls button:hover:not(:disabled) { color: var(--text); background: var(--fill-hover); }
+.file-pdf-controls button:disabled { opacity: .35; cursor: default; }
+.file-pdf-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.file-pdf-controls svg { width: 15px; height: 15px; }
+.file-pdf-controls .file-pdf-zoom { min-width: 52px; }
+.file-pdf-page-number { min-width: 60px; text-align: center; color: var(--text-soft); font: 11px/1.5 var(--mono); font-variant-numeric: tabular-nums; }
+.file-pdf-stage { position: relative; min-height: 360px; max-width: 100%; padding: 18px 0 24px; overflow-x: auto; }
+.file-pdf-page { width: max-content; min-width: 100%; padding-inline: 18px; }
+.file-pdf-page canvas { display: block; margin-inline: auto; background: white; box-shadow: 0 2px 12px #0002; }
+.file-pdf-page[data-loading=true] canvas { opacity: .25; }
+.file-pdf-status { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; gap: 8px; padding-top: 120px; color: var(--muted); font-size: 12px; pointer-events: none; }
+.file-pdf-status svg { width: 16px; height: 16px; }
+.file-pdf-reader .file-preview-original { display: inline-flex; align-items: center; gap: 6px; }
+.file-pdf-reader .file-preview-original svg { width: 14px; height: 14px; }
+@media (max-width: 400px) { .file-pdf-toolbar { padding-inline: 8px; gap: 4px; } }

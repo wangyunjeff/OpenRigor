@@ -7,6 +7,10 @@ import {
   isThemePreference,
   modelOptions,
   modelSupportsUltra,
+  modelLabel,
+  normalizeModelCatalog,
+  persistModelCatalog,
+  readStoredModelCatalog,
   normalizeManualExecutionPreference,
   normalizeModeForModel,
   resolveExecutionPreference,
@@ -90,4 +94,34 @@ test("resolves and validates persisted theme preferences", () => {
   assert.equal(resolveTheme("light", true), "light");
   assert.equal(isThemePreference("dark"), true);
   assert.equal(isThemePreference("sepia"), false);
+});
+
+
+test("validates and deduplicates the runtime model catalog", () => {
+  assert.deepEqual(normalizeModelCatalog([
+    { id: "gpt-6-sol", name: "GPT-6 Sol", description: "Available locally" },
+    { id: "gpt-6-sol", name: "Duplicate" },
+    { id: "bad model id", name: "Invalid" },
+    { id: "provider/model:latest" },
+    null
+  ]), [
+    { id: "gpt-6-sol", name: "GPT-6 Sol", description: "Available locally" },
+    { id: "provider/model:latest", name: "provider/model:latest", description: "Local runtime model" }
+  ]);
+});
+
+test("restores a runtime-advertised model while rejecting unadvertised stored ids", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } } });
+  try {
+    persistModelCatalog([{ id: "gpt-6-sol", name: "GPT-6 Sol", description: "Available locally" }]);
+    assert.equal(readStoredModelCatalog().length, 1);
+    assert.equal(modelLabel("gpt-6-sol"), "GPT-6 Sol");
+    assert.deepEqual(normalizeManualExecutionPreference({ model: "gpt-6-sol", effort: "high", mode: "standard" }), { model: "gpt-6-sol", effort: "high", mode: "standard" });
+    assert.equal(normalizeManualExecutionPreference({ model: "not-advertised", effort: "high", mode: "standard" }).model, defaultManualExecutionPreference.model);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "window", previous);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
 });

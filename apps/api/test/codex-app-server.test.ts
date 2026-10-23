@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { CodexAppServerClient } from "../src/codex-app-server.js";
+import { OPENRIGOR_PLAN_TOOL } from "../src/research-events.js";
 
 const fixture = fileURLToPath(new URL("./fixtures/fake-codex-app-server.mjs", import.meta.url));
 
@@ -138,4 +139,87 @@ test("turns TokenResearch routing into coordinator guidance without provider sch
     await client.close();
     await launcher.cleanup();
   }
+});
+
+
+test("resumes a saved thread in a new app-server process before appending a turn", async () => {
+  const launcher = await createFakeCodexLauncher();
+  const firstClient = new CodexAppServerClient({ command: launcher.command, requestTimeoutMs: 2_000, turnTimeoutMs: 2_000 });
+  const resumedClient = new CodexAppServerClient({ command: launcher.command, env: { OPENRIGOR_FAKE_ALLOW_RESUME: "true" }, requestTimeoutMs: 2_000, turnTimeoutMs: 2_000 });
+  try {
+    const first = await firstClient.run({ prompt: "First persisted turn", cwd: dirname(fixture), ephemeral: false });
+    await firstClient.close();
+    const resumed = await resumedClient.run({ prompt: "Continue saved work", cwd: dirname(fixture), threadId: first.threadId, ephemeral: false });
+    assert.equal(resumed.status, "completed");
+    assert.equal(resumed.threadId, first.threadId);
+    assert.deepEqual(await resumedClient.listModels(), [{ id: "test-model", name: "Test model", description: "Fixture model" }]);
+  } finally {
+    await firstClient.close(); await resumedClient.close(); await launcher.cleanup();
+  }
+});
+
+
+test("bridges explicit command approvals and user answers exactly once", async () => {
+  const launcher = await createFakeCodexLauncher();
+  const client = new CodexAppServerClient({ command: launcher.command, requestTimeoutMs: 2_000, turnTimeoutMs: 2_000 });
+  try {
+    const approvals: string[] = [];
+    const approved = await client.run({ prompt: "approval", cwd: dirname(fixture) }, {
+      onServerRequest: (request, respond) => {
+        approvals.push(request.method);
+        assert.equal(respond({ decision: "accept" }), true);
+        assert.equal(respond({ decision: "accept" }), false);
+      }
+    });
+    assert.equal(approved.status, "completed");
+    assert.deepEqual(approvals, ["item/commandExecution/requestApproval"]);
+    const deltas: string[] = [];
+    const answered = await client.run({ prompt: "question", cwd: dirname(fixture), threadId: approved.threadId }, {
+      onServerRequest: (request, respond) => { assert.equal(request.method, "item/tool/requestUserInput"); respond({ answers: { choice: { answers: ["Markdown"] } } }); },
+      onNotification: (notification) => { const params = notification.params as { delta?: string } | undefined; if (params?.delta) deltas.push(params.delta); }
+    });
+    assert.equal(answered.status, "completed");
+    assert.ok(deltas.join("").includes("Markdown"));
+  } finally { await client.close(); await launcher.cleanup(); }
+});
+
+test("interrupting a waiting approval declines it and releases the turn", async () => {
+  const launcher = await createFakeCodexLauncher();
+  const client = new CodexAppServerClient({ command: launcher.command, requestTimeoutMs: 2_000, turnTimeoutMs: 2_000 });
+  try {
+    let ready: (() => void) | undefined;
+    let session: { threadId: string; turnId: string } | undefined;
+    const pending = new Promise<void>((done) => { ready = done; });
+    let responded: ((result: unknown) => boolean) | undefined;
+    const run = client.run({ prompt: "approval", cwd: dirname(fixture) }, {
+      onSession: (value) => { session = value; },
+      onServerRequest: (_request, respond) => { responded = respond; ready?.(); }
+    });
+    await pending;
+    assert.ok(session);
+    await client.interrupt(session.threadId, session.turnId);
+    await run;
+    assert.equal(responded?.({ decision: "accept" }), false);
+  } finally { await client.close(); await launcher.cleanup(); }
+});
+
+test("declares the verified dynamic planning tool and resolves its server call exactly once", async () => {
+  const launcher = await createFakeCodexLauncher();
+  const client = new CodexAppServerClient({ command: launcher.command, requestTimeoutMs: 2_000, turnTimeoutMs: 2_000 });
+  try {
+    let calls = 0;
+    const result = await client.run({ prompt: "dynamic-plan", cwd: dirname(fixture), dynamicTools: [OPENRIGOR_PLAN_TOOL] }, {
+      onServerRequest: (request, respond) => {
+        calls += 1;
+        assert.equal(request.method, "item/tool/call");
+        const params = request.params as { tool: string };
+        assert.equal(params.tool, "openrigor_update_plan");
+        const response = { success: true, contentItems: [{ type: "inputText", text: "Recorded" }] };
+        assert.equal(respond(response), true);
+        assert.equal(respond(response), false);
+      }
+    });
+    assert.equal(result.status, "completed");
+    assert.equal(calls, 1);
+  } finally { await client.close(); await launcher.cleanup(); }
 });

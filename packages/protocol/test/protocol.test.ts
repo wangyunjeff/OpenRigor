@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TOOL_OUTCOMES, createInitialSnapshot, isTerminalStatus, validateRunRequest } from "../src/index.js";
+import { TOOL_OUTCOMES, createInitialSnapshot, isTerminalEvent, isTerminalStatus, validateRunRequest, type RunEvent } from "../src/index.js";
 
 test("validates a run request and applies safe defaults", () => {
   const request = validateRunRequest({ prompt: "  inspect this repo  " });
@@ -84,4 +84,17 @@ test("normalizes TokenResearch routing to a deterministic Sol Ultra/max coordina
 
 test("exposes additive tool outcomes without changing the lifecycle contract", () => {
   assert.deepEqual(TOOL_OUTCOMES, ["success", "no-result", "partial", "error", "declined"]);
+});
+
+test("plan, source and verified artifact metadata remain additive protocol-v0 events", () => {
+  const base = { protocolVersion: 0, runId: "run_research", eventId: "run_research:1", sequence: 1, ts: "2026-10-22T00:00:00Z" } as const;
+  const events: RunEvent[] = [
+    { ...base, type: "plan", steps: [{ step: "Read evidence", status: "in_progress" }], explanation: "Actual state", provenance: "tool" },
+    { ...base, type: "source", source: { sourceId: "source_paper", url: "https://example.org/paper", title: "Primary paper", origin: "web-search", kind: "page-request" } },
+    { ...base, type: "file", file: { fileId: "artifact_csv", name: "results.csv", path: "artifacts/results.csv", mimeType: "text/csv", revision: 1, sizeBytes: 20, contentUrl: "/api/runs/run_research/files/artifact_csv/content?revision=1", downloadUrl: "/api/runs/run_research/files/artifact_csv?revision=1" } }
+  ];
+  assert.deepEqual(JSON.parse(JSON.stringify(events)), events);
+  assert.ok(events.every((event) => !isTerminalEvent(event)));
+  const legacy: RunEvent = { ...base, type: "file", file: { fileId: "old", name: "old.txt", mimeType: "text/plain", revision: 1 } };
+  assert.equal(legacy.file.path, undefined);
 });

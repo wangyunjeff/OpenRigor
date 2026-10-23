@@ -2,6 +2,12 @@
 
 The roadmap is intentionally ordered around the highest-risk invariant: a long-running run must be recoverable and auditable without trusting the browser.
 
+## Delivered local edition (2026-10-21)
+
+The single-operator local edition now has fsynced disk event journals, restart-safe history and idempotency, Codex thread resume, interactive approvals/questions, project directories and instructions, knowledge, skills, attachments, guarded file downloads, image generation/editing, searchable task management, and actual token usage. Browser-persisted follow-ups dispatch while the browser remains open. Interrupted provider turns are explicitly finalized and can be continued; tools are never blindly replayed after a restart.
+
+See [the current implementation](LOCAL_WORKSPACE.md). These local capabilities do not claim that the distributed infrastructure below is complete. Cloud hosts are outside the current product scope.
+
 ## M0 — research and protocol (complete)
 
 - [x] Public product and frontend/runtime investigation snapshot.
@@ -12,7 +18,7 @@ The roadmap is intentionally ordered around the highest-risk invariant: a long-r
 
 Acceptance: a new contributor can install dependencies, submit a local run, observe typed events, cancel it, and reconnect to the event stream.
 
-## M1 — durable single-tenant alpha (next)
+## M1 — distributed single-tenant runtime (future hosted work)
 
 - [ ] PostgreSQL schema and migrations for runs/events/artifacts.
 - [ ] Transactional outbox plus queue worker.
@@ -55,4 +61,4 @@ Exit criteria: tenant isolation and credit accounting pass an independent review
 
 ## Deliberately deferred
 
-Brand-level visual matching, proprietary copy, unrestricted arbitrary code execution, multi-region active-active, and a large model catalog are deferred until the durable single-tenant alpha is proven.
+Proprietary brand assets/copy, unrestricted arbitrary code execution, public multi-tenant deployment, and multi-region active-active remain outside the local edition. Product layout and observed workflows are implemented with original code and artwork. The available model catalog is discovered from the signed-in Codex runtime.

@@ -1,6 +1,6 @@
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
+import { createMathPlugin } from "@streamdown/math";
 import type { PluginConfig } from "streamdown";
 import { useEffect, useMemo, useState } from "react";
 
@@ -9,13 +9,24 @@ const mermaidFencePattern =
 
 type MermaidPlugin = NonNullable<PluginConfig["mermaid"]>;
 
+// The plugin defaults to display-only dollars. Scientific answers also use
+// inline dollars, including normalized LaTeX \(...\) expressions.
+const math = createMathPlugin({ singleDollarTextMath: true });
 const baseStreamdownPlugins = { cjk, code, math } satisfies PluginConfig;
 
 let mermaidPluginPromise: Promise<MermaidPlugin | null> | null = null;
 
 const loadMermaidPlugin = (): Promise<MermaidPlugin | null> => {
   mermaidPluginPromise ??= import("@streamdown/mermaid")
-    .then(({ mermaid }) => mermaid)
+    .then(({ createMermaidPlugin }) => createMermaidPlugin({ config: {
+      theme: "base",
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+      themeVariables: {
+        primaryColor: "#e1eadc", primaryTextColor: "#213229",
+        primaryBorderColor: "#91a38a", lineColor: "#9bad96",
+        secondaryColor: "#e9ece6", tertiaryColor: "#d9e2d4", fontSize: "14px"
+      }
+    } }))
     .catch(() => null);
 
   return mermaidPluginPromise;

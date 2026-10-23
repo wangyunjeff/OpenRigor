@@ -1,15 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
-import { URL } from "node:url";
+import { resolve, join } from "node:path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { LocalStore, type PersistedRun } from "./local-store.js";
+import { ApiError, WorkspaceService } from "./workspace.js";
+import { readPublicWebPage, WebReaderError } from "./web-reader.js";
+import { RunArtifactDiscovery, canPreviewArtifact, isTextArtifact, readCapturedArtifact } from "./run-artifacts.js";
+import { OPENRIGOR_PLAN_TOOL, extractCodexSources, parseCodexPlan, validatePlanToolArguments } from "./research-events.js";
+import { URL, fileURLToPath } from "node:url";
 import {
   PROTOCOL_VERSION,
   createInitialSnapshot,
   isTerminalStatus,
   supportsUltraMode,
   validateRunRequest,
+  type AttachmentRef,
   type EventBase,
-  type FileArtifact,
   type RunEvent,
   type RunDetail,
   type RunRequest,
@@ -22,6 +29,7 @@ import {
   createCodexAppServerClientFromEnv,
   type CodexAppServerClient,
   type CodexNotification,
+  type CodexServerRequest,
   type CodexReasoningEffort
 } from "./codex-app-server.js";
 import {
@@ -40,9 +48,14 @@ const allowedOrigins = new Set(
 const maxBodyBytes = 256 * 1024;
 const executor = (process.env.OPENRIGOR_EXECUTOR ?? "demo").trim().toLowerCase();
 const codexClient = executor === "codex-app-server" ? createCodexAppServerClientFromEnv() : null;
-const codexCwd = resolve(process.env.OPENRIGOR_CODEX_CWD?.trim() || process.cwd());
+const codexCwd = resolve(process.env.OPENRIGOR_CODEX_CWD?.trim() || fileURLToPath(new URL("../../../", import.meta.url)));
 const codexSandbox = parseCodexSandbox(process.env.OPENRIGOR_CODEX_SANDBOX);
 const codexApprovalPolicy = parseCodexApprovalPolicy(process.env.OPENRIGOR_CODEX_APPROVAL_POLICY);
+const dataDirectory = process.env.OPENRIGOR_DATA_DIR?.trim() || (process.env.NODE_TEST_CONTEXT ? mkdtempSync(join(tmpdir(), "openrigor-test-")) : join(codexCwd, ".openrigor"));
+const localStore = new LocalStore(resolve(dataDirectory));
+const releaseDataLock = localStore.acquireLock();
+process.once("exit", releaseDataLock);
+const workspace = new WorkspaceService(localStore, codexCwd, executor);
 
 function parseCodexSandbox(value: string | undefined): "read-only" | "workspace-write" | "danger-full-access" {
   if (value === "read-only" || value === "danger-full-access" || value === "workspace-write") return value;
@@ -51,12 +64,22 @@ function parseCodexSandbox(value: string | undefined): "read-only" | "workspace-
 
 function parseCodexApprovalPolicy(value: string | undefined): "untrusted" | "on-request" | "never" {
   if (value === "untrusted" || value === "on-request" || value === "never") return value;
-  // The first local integration has no approval UI yet. `never` keeps a run
-  // from hanging while still honoring the app-server sandbox policy.
-  return "never";
+  // The local UI now handles explicit command/file approvals and questions.
+  return "on-request";
 }
 
 type EventListener = (event: RunEvent) => void;
+const eventStreams = new Set<ServerResponse>();
+let shuttingDown = false;
+interface PublicUserRequest {
+  id: string;
+  kind: "approval" | "question";
+  title: string;
+  description?: string;
+  questions?: { id: string; header: string; question: string; options?: { label: string; description: string }[] }[];
+}
+interface PendingUserRequest { public: PublicUserRequest; resolved: boolean; respond: (result: unknown) => boolean }
+
 
 interface RunRecord {
   snapshot: RunSnapshot;
@@ -65,8 +88,19 @@ interface RunRecord {
   cancelRequested: boolean;
   codexThreadId?: string;
   codexTurnId?: string;
+  clientRequestId?: string;
+  fingerprint?: string;
+  projectId?: string;
+  skillIds?: string[];
+  contextPrompt?: string;
+  attachments?: AttachmentRef[];
+  contextPaths?: string[];
+  userRequests: Map<string, PendingUserRequest>;
   codexTools: Map<string, ToolCall>;
   codexUsage?: { inputTokens?: number; outputTokens?: number; providerRequestId?: string };
+  artifactDiscovery?: RunArtifactDiscovery;
+  sourceVersions?: Map<string, string>;
+  lastPlan?: string;
 }
 
 const runs = new Map<string, RunRecord>();
@@ -88,7 +122,8 @@ function setCors(req: IncomingMessage, res: ServerResponse): void {
   if (origin && allowedOrigins.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Length");
   res.setHeader("Vary", "Origin");
 }
 
@@ -111,8 +146,11 @@ function baseEvent<T extends RunEvent["type"]>(record: RunRecord, type: T, ts = 
 }
 
 function publish(record: RunRecord, event: RunEvent): void {
+  // Persist before fan-out so an acknowledged browser event always survives restart.
+  localStore.appendEvent(event);
   record.events.push(event);
   applyProjection(record, event);
+  persistRun(record);
   for (const listener of record.listeners) listener(event);
 }
 
@@ -167,6 +205,9 @@ function publishFinished(
   // the public event stream strictly single-terminal so clients do not need
   // to guess which completion event wins.
   if (isTerminalStatus(record.snapshot.status)) return;
+  for (const request of record.userRequests.values()) {
+    if (!request.resolved) { request.resolved = true; request.respond(request.public.kind === "question" ? { answers: {} } : { decision: "decline" }); }
+  }
   const base = baseEvent(record, "run-finished");
   const event: RunEvent = {
     ...base,
@@ -181,7 +222,9 @@ function publishFinished(
 function sendEvent(res: ServerResponse, event: RunEvent): void {
   res.write(`id: ${event.eventId}\n`);
   res.write(`event: ${event.type}\n`);
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
+  const record = runs.get(event.runId);
+  const payload = event.type === "snapshot" && record ? { ...event, snapshot: publicSnapshot(record, event.snapshot) } : event;
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -190,11 +233,11 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > maxBodyBytes) throw new Error("request body is too large");
+    if (size > maxBodyBytes) throw new ApiError(413, "request body is too large");
     chunks.push(buffer);
   }
   if (size === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new ApiError(400, "request body must be valid JSON"); }
 }
 
 function delay(ms: number): Promise<void> {
@@ -243,11 +286,15 @@ function safeCodexText(value: unknown, maxLength = 4_000): string | undefined {
   // lightweight local guard, not a replacement for production secret scanning.
   const redacted = value
     .replace(/sk-[A-Za-z0-9_-]{16,}/g, "[REDACTED]")
-    .replace(/(api[_-]?key|authorization|token)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
+    .replace(/((?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|password|passwd|secret|cookie|token)["\']?)\s*[:=]\s*(?:"[^"\n]*"|\'[^\'\n]*\'|(?:Bearer\s+)?[^\s,;]+)/gi, "$1=[REDACTED]");
   return redacted.length > maxLength ? `${redacted.slice(0, maxLength)}...` : redacted;
 }
 
 function publishCodexStatus(record: RunRecord, status: RunStatus, options: { progress?: number; currentStep?: string }): void {
+  if ([...record.userRequests.values()].some((request) => !request.resolved) && status !== "cancelling") {
+    status = "waiting_user";
+    options = { ...options, currentStep: "Waiting for your response" };
+  }
   const progress = options.progress === undefined ? record.snapshot.progress : Math.max(record.snapshot.progress, options.progress);
   const sameStatus = record.snapshot.status === status;
   const sameStep = options.currentStep === undefined || record.snapshot.currentStep === options.currentStep;
@@ -601,18 +648,27 @@ function publishCodexItem(record: RunRecord, item: Record<string, unknown>, star
 
 function publishCodexFileArtifacts(record: RunRecord, item: Record<string, unknown>): void {
   const changes = Array.isArray(item.changes) ? item.changes : [];
-  for (const change of changes) {
+  for (const change of changes.slice(0, 60)) {
     const changeRecord = codexRecord(change);
     const path = codexString(changeRecord?.path);
     if (!path) continue;
-    const name = path.replaceAll("\\", "/").split("/").pop() ?? path;
-    const artifact: FileArtifact = {
-      fileId: `${codexItemId(item) ?? randomUUID()}:${name}`,
-      name: path,
-      mimeType: name.endsWith(".md") ? "text/markdown" : name.endsWith(".json") ? "application/json" : "text/plain",
-      revision: 1
-    };
-    publish(record, { ...baseEvent(record, "file"), type: "file", file: artifact });
+    const artifact = record.artifactDiscovery?.capture(path);
+    if (artifact) publish(record, { ...baseEvent(record, "file"), type: "file", file: artifact });
+  }
+}
+
+function discoverRunArtifacts(record: RunRecord): void {
+  if (isCancelled(record)) return;
+  for (const file of record.artifactDiscovery?.discover() ?? []) publish(record, { ...baseEvent(record, "file"), type: "file", file });
+}
+
+function publishCodexSources(record: RunRecord, item: Record<string, unknown>): void {
+  record.sourceVersions ??= new Map();
+  for (const source of extractCodexSources(item)) {
+    const fingerprint = JSON.stringify(source);
+    if (record.sourceVersions.get(source.sourceId) === fingerprint) continue;
+    record.sourceVersions.set(source.sourceId, fingerprint);
+    publish(record, { ...baseEvent(record, "source"), type: "source", source });
   }
 }
 
@@ -623,7 +679,7 @@ function handleCodexNotification(record: RunRecord, notification: CodexNotificat
   const method = notification.method;
 
   if (method.endsWith("/requestApproval") || method === "item/tool/requestUserInput" || method === "mcpServer/elicitation/request") {
-    publishCodexStatus(record, "waiting_user", { currentStep: "Codex requested input; local alpha declined it" });
+    // The dedicated server-request callback owns interactive state; unsupported requests are declined by the client.
     return;
   }
 
@@ -656,9 +712,14 @@ function handleCodexNotification(record: RunRecord, notification: CodexNotificat
     publishCodexItem(record, item, method === "item/started");
     if (method === "item/completed" && codexString(item.type) === "fileChange") publishCodexFileArtifacts(record, item);
     const itemType = codexString(item.type);
+    if (itemType === "webSearch") publishCodexSources(record, item);
+    if (method === "item/completed" && ["commandExecution", "fileChange"].includes(itemType ?? "")) discoverRunArtifacts(record);
     if (method === "item/completed" && itemType === "agentMessage") {
       const text = safeCodexText(item.text, 32_000);
-      if (text) publish(record, { ...baseEvent(record, "part"), type: "part", part: { partId: codexMessagePartId(codexItemId(item)), kind: "text", text, done: true } });
+      if (text) {
+        publish(record, { ...baseEvent(record, "part"), type: "part", part: { partId: codexMessagePartId(codexItemId(item)), kind: "text", text, done: true } });
+        for (const file of record.artifactDiscovery?.mentioned(text) ?? []) publish(record, { ...baseEvent(record, "file"), type: "file", file });
+      }
     }
     if (method === "item/completed" && itemType === "reasoning") {
       const text = safeCodexText(codexFlattenText(item.summary) || codexFlattenText(item.content), 32_000);
@@ -668,11 +729,15 @@ function handleCodexNotification(record: RunRecord, notification: CodexNotificat
     return;
   }
   if (method === "turn/plan/updated") {
-    const plan = Array.isArray(params.plan) ? params.plan : [];
-    const completed = plan.filter((step) => codexString(codexRecord(step)?.status) === "completed").length;
-    const progress = plan.length ? Math.min(90, Math.max(record.snapshot.progress, Math.round((completed / plan.length) * 80))) : record.snapshot.progress;
-    const current = plan.find((step) => codexString(codexRecord(step)?.status) !== "completed");
-    const currentStep = codexString(codexRecord(current)?.step) ?? codexString(codexRecord(current)?.text) ?? "Planning";
+    const plan = parseCodexPlan(params);
+    if (!plan) return;
+    const fingerprint = JSON.stringify(plan);
+    if (record.lastPlan === fingerprint) return;
+    record.lastPlan = fingerprint;
+    publish(record, { ...baseEvent(record, "plan"), type: "plan", ...plan, provenance: "provider" });
+    const completed = plan.steps.filter((step) => step.status === "completed").length;
+    const progress = plan.steps.length ? Math.min(90, Math.max(record.snapshot.progress, Math.round((completed / plan.steps.length) * 80))) : record.snapshot.progress;
+    const currentStep = plan.steps.find((step) => step.status === "in_progress")?.step ?? plan.steps.find((step) => step.status === "pending")?.step ?? "Planning";
     publishCodexStatus(record, "running", { progress, currentStep });
     return;
   }
@@ -770,6 +835,8 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
     return;
   }
   publishStatus(record, "running", { progress: 4, currentStep: "Starting Codex" });
+  const runCwd = record.projectId ? workspace.project(record.projectId).path : codexCwd;
+  record.artifactDiscovery = new RunArtifactDiscovery(runCwd, localStore.directory, record.snapshot.runId);
   const request: RunRequest = {
     prompt: record.snapshot.prompt,
     model: record.snapshot.model,
@@ -780,8 +847,9 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
   };
   const result = await client.run(
     {
-      prompt: request.prompt,
-      cwd: codexCwd,
+      prompt: `${request.prompt}\n\n[OpenRigor delivery guidance]\nFor nontrivial multi-step work, use openrigor_update_plan if available to publish a real plan and update actual step statuses as work proceeds; skip plans for simple requests. Save generated deliverables under the workspace's artifacts/ directory and link completed files using relative Markdown links in the final answer. Preserve original source URLs and distinguish retrieved evidence from unverified references or failed page requests. Return the useful answer directly; do not fabricate sources, files, progress, or an unnecessarily long report.${record.contextPrompt ? `\n\n[OpenRigor workspace context]\n${record.contextPrompt}` : ""}`,
+      cwd: runCwd,
+      dynamicTools: [OPENRIGOR_PLAN_TOOL],
       ...(record.codexThreadId === undefined ? {} : { threadId: record.codexThreadId }),
       ...(request.model === undefined ? {} : { model: request.model }),
       effort: codexEffort(request),
@@ -790,17 +858,19 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
       approvalPolicy: codexApprovalPolicy,
       // A root run creates one thread. Follow-up runs pass that thread id and
       // append another turn without creating or resuming a second thread.
-      ephemeral: process.env.OPENRIGOR_CODEX_EPHEMERAL !== "false"
+      ephemeral: process.env.OPENRIGOR_CODEX_EPHEMERAL === "true"
     },
     {
       onSession: (session) => {
         record.codexThreadId = session.threadId;
         record.codexTurnId = session.turnId;
+        persistRun(record);
         if (record.cancelRequested) {
           void client.interrupt(session.threadId, session.turnId).catch(() => undefined);
         }
       },
-      onNotification: (notification) => handleCodexNotification(record, notification)
+      onNotification: (notification) => handleCodexNotification(record, notification),
+      onServerRequest: (request, respond) => registerUserRequest(record, request, respond)
     }
   );
 
@@ -808,6 +878,7 @@ async function executeCodexRun(record: RunRecord, client: CodexAppServerClient):
     publishFinished(record, "cancelled");
     return;
   }
+  discoverRunArtifacts(record);
   if (result.status === "failed") {
     const message = safeCodexText(result.error?.message ?? "Codex turn failed", 2_000) ?? "Codex turn failed";
     publish(record, { ...baseEvent(record, "error"), type: "error", code: "CODEX_TURN_FAILED", message, retryable: false });
@@ -830,18 +901,28 @@ function conversationRuns(record: RunRecord): RunRecord[] {
   return runsByConversationId.get(conversationIdOf(record)) ?? [record];
 }
 
-function runDetail(record: RunRecord): RunDetail {
+function publicSnapshot(record: RunRecord, snapshot = record.snapshot): RunSnapshot & { projectId: string | null; attachments: AttachmentRef[] } {
+  return { ...snapshot, projectId: record.projectId ?? null, attachments: record.attachments ?? [] };
+}
+
+function publicEvents(record: RunRecord): RunEvent[] {
+  return record.events.map((event) => event.type === "snapshot" ? { ...event, snapshot: publicSnapshot(record, event.snapshot) } : event);
+}
+
+function runDetail(record: RunRecord): RunDetail & { projectId: string | null; attachments: AttachmentRef[] } {
   const conversationId = conversationIdOf(record);
   const rootRunId = rootRunIdOf(record);
   return {
-    snapshot: record.snapshot,
-    events: record.events,
+    projectId: record.projectId ?? null,
+    attachments: record.attachments ?? [],
+    snapshot: publicSnapshot(record),
+    events: publicEvents(record),
     conversation: {
       conversationId,
       rootRunId,
       runs: conversationRuns(record).map((conversationRun) => ({
-        snapshot: conversationRun.snapshot,
-        events: conversationRun.events
+        snapshot: publicSnapshot(conversationRun),
+        events: publicEvents(conversationRun)
       }))
     }
   };
@@ -865,13 +946,16 @@ function runRequestFingerprint(request: RunRequest): string {
   });
 }
 
-function createRun(request: RunRequest): { record: RunRecord; replayed: boolean } {
-  const result = getOrCreateIdempotent(request.clientRequestId, runRequestFingerprint(request), runsByClientRequestId, () => {
+function createRun(request: RunRequest, metadata: { projectId?: string; skillIds?: string[]; knowledgeIds?: string[]; contextPaths?: string[] } = {}): { record: RunRecord; replayed: boolean } {
+  const fingerprint = runRequestFingerprint(request) + (metadata.projectId || metadata.skillIds?.length || metadata.knowledgeIds?.length || metadata.contextPaths?.length ? JSON.stringify(metadata) : "");
+  const result = getOrCreateIdempotent(request.clientRequestId, fingerprint, runsByClientRequestId, () => {
     const runId = `run_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
     let conversationId = `conversation_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
     let rootRunId = runId;
     let parentRunId: string | undefined;
     let codexThreadId: string | undefined;
+    let projectId = metadata.projectId;
+    if (projectId) workspace.project(projectId);
 
     if (request.continueFromRunId) {
       const parent = runs.get(request.continueFromRunId);
@@ -887,9 +971,12 @@ function createRun(request: RunRequest): { record: RunRecord; replayed: boolean 
       rootRunId = rootRunIdOf(parent);
       parentRunId = parent.snapshot.runId;
       codexThreadId = parent.codexThreadId;
+      if (projectId && projectId !== parent.projectId) throw new HttpError(409, "a conversation cannot switch project directories");
+      projectId = parent.projectId;
       if (codexClient && !codexThreadId) throw new HttpError(409, "Codex thread is unavailable for continuation");
     }
 
+    const attachmentContext = workspace.attachments(request.attachments, projectId);
     const initialSnapshot = createInitialSnapshot(runId, request);
     const record: RunRecord = {
       snapshot: {
@@ -902,18 +989,109 @@ function createRun(request: RunRequest): { record: RunRecord; replayed: boolean 
       listeners: new Set(),
       cancelRequested: false,
       codexTools: new Map(),
+      userRequests: new Map(),
+      ...(request.clientRequestId ? { clientRequestId: request.clientRequestId } : {}),
+      fingerprint,
+      ...(projectId ? { projectId } : {}),
+      ...(metadata.skillIds ? { skillIds: metadata.skillIds } : {}),
+      attachments: attachmentContext.refs,
+      ...(metadata.contextPaths?.length ? { contextPaths: metadata.contextPaths } : {}),
+      contextPrompt: [workspace.context(projectId, metadata.skillIds, metadata.knowledgeIds, metadata.contextPaths), attachmentContext.context].filter(Boolean).join("\n\n"),
       ...(codexThreadId === undefined ? {} : { codexThreadId })
     };
+    record.snapshot = publicSnapshot(record);
     runs.set(runId, record);
     const chain = runsByConversationId.get(conversationId) ?? [];
     chain.push(record);
     runsByConversationId.set(conversationId, chain);
+    persistRun(record);
     publish(record, { ...baseEvent(record, "snapshot"), type: "snapshot", snapshot: record.snapshot });
     const execution = codexClient ? executeCodexRun(record, codexClient) : executeDemoRun(record);
     void execution.catch((error: unknown) => publishExecutorFailure(record, codexClient ? "CODEX_EXECUTOR_ERROR" : "EXECUTOR_ERROR", error));
     return record;
   });
   return { record: result.value, replayed: result.replayed };
+}
+
+function registerUserRequest(record: RunRecord, request: CodexServerRequest, respond: (result: unknown) => boolean): void {
+  const params = codexRecord(request.params);
+  if (request.method === "item/tool/call") {
+    const reply = (success: boolean, text: string): void => { respond({ success, contentItems: [{ type: "inputText", text }] }); };
+    if (isCancelled(record)) { reply(false, "This run is no longer active."); return; }
+    if (params?.tool !== "openrigor_update_plan" || (params.namespace !== undefined && params.namespace !== null)) { reply(false, "This local tool is not supported."); return; }
+    try {
+      const plan = validatePlanToolArguments(params.arguments);
+      const fingerprint = JSON.stringify(plan);
+      if (record.lastPlan !== fingerprint) {
+        record.lastPlan = fingerprint;
+        publish(record, { ...baseEvent(record, "plan"), type: "plan", ...plan, provenance: "tool" });
+        const currentStep = plan.steps.find((step) => step.status === "in_progress")?.step ?? plan.steps.find((step) => step.status === "pending")?.step;
+        if (currentStep) publishCodexStatus(record, "running", { currentStep });
+      }
+      reply(true, "The work plan has been recorded and displayed. Update it only to reflect actual work.");
+    } catch (error) { reply(false, error instanceof Error ? error.message : "Invalid plan arguments."); }
+    return;
+  }
+  if (isTerminalStatus(record.snapshot.status) || record.cancelRequested) { respond(request.method === "item/tool/requestUserInput" ? { answers: {} } : { decision: "decline" }); return; }
+  const id = `request_${randomUUID().slice(0, 16)}`;
+  const question = request.method === "item/tool/requestUserInput";
+  const details: PublicUserRequest = { id, kind: question ? "question" : "approval", title: question ? "The agent needs your input" : request.method === "item/fileChange/requestApproval" ? "Approve file changes" : "Approve command execution" };
+  const reason = safeCodexText(params?.reason, 2_000);
+  const command = safeCodexText(typeof params?.command === "string" ? params.command : Array.isArray(params?.command) ? params.command.join(" ") : undefined, 8_000);
+  const cwd = safeCodexText(params?.cwd, 1_000);
+  const description = [reason, command ? `Command: ${command}` : undefined, cwd ? `Directory: ${cwd}` : undefined].filter(Boolean).join("\n");
+  if (description) details.description = description;
+  if (question) {
+    const questions = Array.isArray(params?.questions) ? params.questions.slice(0, 8) : [];
+    details.questions = questions.flatMap((value) => {
+      const item = codexRecord(value); const questionId = codexString(item?.id); const prompt = safeCodexText(item?.question, 4_000);
+      if (!questionId || !prompt) return [];
+      const options = Array.isArray(item?.options) ? item.options.slice(0, 20).flatMap((option) => {
+        const optionRecord = codexRecord(option); const label = safeCodexText(optionRecord?.label, 200);
+        return label ? [{ label, description: safeCodexText(optionRecord?.description, 1_000) ?? "" }] : [];
+      }) : [];
+      return [{ id: questionId.slice(0, 100), header: safeCodexText(item?.header, 100) ?? "Your input", question: prompt, ...(options.length ? { options } : {}) }];
+    });
+    if (!details.questions.length) { respond({ answers: {} }); return; }
+  }
+  record.userRequests.set(id, { public: details, resolved: false, respond });
+  publishStatus(record, "waiting_user", { currentStep: details.title });
+}
+
+function persistRun(record: RunRecord): void {
+  const metadata: PersistedRun = { snapshot: record.snapshot, ...(record.clientRequestId ? { clientRequestId: record.clientRequestId } : {}), ...(record.fingerprint ? { fingerprint: record.fingerprint } : {}), ...(record.codexThreadId ? { codexThreadId: record.codexThreadId } : {}), ...(record.projectId ? { projectId: record.projectId } : {}), ...(record.skillIds ? { skillIds: record.skillIds } : {}), ...(record.contextPrompt ? { contextPrompt: record.contextPrompt } : {}), ...(record.attachments?.length ? { attachments: record.attachments } : {}), ...(record.contextPaths?.length ? { contextPaths: record.contextPaths } : {}) };
+  localStore.writeRun(metadata);
+}
+
+function restorePersistedRuns(): void {
+  for (const { metadata, events } of localStore.loadRuns()) {
+    const record: RunRecord = { ...metadata, events: [], listeners: new Set(), cancelRequested: false, codexTools: new Map(), userRequests: new Map() };
+    for (const event of events) { record.events.push(event); applyProjection(record, event); if (event.type === "tool") record.codexTools.set(event.tool.callId, event.tool); }
+    record.snapshot = publicSnapshot(record);
+    runs.set(record.snapshot.runId, record);
+    const conversationId = conversationIdOf(record);
+    const chain = runsByConversationId.get(conversationId) ?? []; chain.push(record); runsByConversationId.set(conversationId, chain);
+    if (metadata.clientRequestId && metadata.fingerprint) runsByClientRequestId.set(metadata.clientRequestId, { fingerprint: metadata.fingerprint, value: record });
+    if (!isTerminalStatus(record.snapshot.status)) {
+      const message = "The local runtime restarted before this turn finished. Its saved output is available; send a follow-up to continue.";
+      publishFinished(record, "failed", { code: "RUNTIME_RESTARTED", message });
+    }
+  }
+}
+function conversationList(url: URL): { rootRunId: string; conversationId: string; latestRunId: string; prompt: string; title: string; status: RunStatus; updatedAt: string; projectId?: string; pinned: boolean; archived: boolean }[] {
+  const query = (url.searchParams.get("q") ?? "").toLowerCase();
+  const projectId = url.searchParams.get("projectId");
+  const includeArchived = url.searchParams.get("archived") === "true";
+  return [...runsByConversationId.values()].flatMap((chain) => {
+    const first = chain[0]; const latest = chain.at(-1);
+    if (!first || !latest) return [];
+    const rootRunId = rootRunIdOf(first);
+    const metadata = workspace.state.conversations[rootRunId] ?? {};
+    const item = { rootRunId, conversationId: conversationIdOf(first), latestRunId: latest.snapshot.runId, prompt: first.snapshot.prompt, title: metadata.title || first.snapshot.prompt.slice(0, 120), status: latest.snapshot.status, updatedAt: latest.snapshot.updatedAt, ...(first.projectId ? { projectId: first.projectId } : {}), pinned: metadata.pinned ?? false, archived: metadata.archived ?? false };
+    if ((!includeArchived && item.archived) || (projectId && item.projectId !== projectId)) return [];
+    if (query && !`${item.title} ${chain.map((run) => run.snapshot.prompt + " " + run.events.flatMap((event) => event.type === "part" ? [event.part.text] : []).join(" ")).join(" ")}`.toLowerCase().includes(query)) return [];
+    return [item];
+  }).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt));
 }
 
 function connectEvents(req: IncomingMessage, res: ServerResponse, runId: string): void {
@@ -934,6 +1112,7 @@ function connectEvents(req: IncomingMessage, res: ServerResponse, runId: string)
   const lastSequence = lastId?.startsWith(`${runId}:`) ? Number.parseInt(lastId.slice(runId.length + 1), 10) : 0;
   const listener: EventListener = (event) => sendEvent(res, event);
   record.listeners.add(listener);
+  eventStreams.add(res);
   res.write(": openrigor\n\n");
   for (const event of record.events) {
     if (event.sequence > (Number.isFinite(lastSequence) ? lastSequence : 0)) sendEvent(res, event);
@@ -943,13 +1122,28 @@ function connectEvents(req: IncomingMessage, res: ServerResponse, runId: string)
   const cleanup = (): void => {
     clearInterval(heartbeat);
     record.listeners.delete(listener);
+    eventStreams.delete(res);
   };
   req.on("close", cleanup);
   res.on("close", cleanup);
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (shuttingDown) {
+    sendJson(res, 503, { error: "API is restarting; retry after reconnecting" });
+    return;
+  }
   setCors(req, res);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "no-store");
+  const host = (req.headers.host ?? "").split(":")[0]?.toLowerCase();
+  if (host && host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]") {
+    sendJson(res, 403, { error: "local API requires a loopback Host header" }); return;
+  }
+  const origin = req.headers.origin;
+  if (origin && !allowedOrigins.has(origin)) {
+    sendJson(res, 403, { error: "origin is not allowed" }); return;
+  }
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     res.end();
@@ -960,6 +1154,111 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (req.method === "GET" && url.pathname === "/healthz") {
     sendJson(res, 200, { ok: true, service: "openrigor-api", executor });
     return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/web/read") {
+    try {
+      sendJson(res, 200, await readPublicWebPage(url.searchParams.get("url") ?? ""));
+    } catch (error: unknown) {
+      if (!(error instanceof WebReaderError)) throw error;
+      sendJson(res, error.statusCode, { error: error.message, code: error.code });
+    }
+    return;
+  }
+
+  const listConversations = (): ReturnType<typeof conversationList> => conversationList(url);
+  if ((url.pathname === "/api/conversations" || url.pathname === "/api/runs") && req.method === "GET") {
+    const conversations = listConversations(); sendJson(res, 200, { conversations, runs: conversations }); return;
+  }
+  const conversationMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)$/);
+  if (conversationMatch?.[1] && req.method === "PATCH") {
+    const rootId = conversationMatch[1];
+    if (!runs.has(rootId)) throw new ApiError(404, "conversation not found");
+    const input = await readJson(req) as Record<string, unknown>;
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new ApiError(400, "request body must be an object");
+    const metadata = workspace.state.conversations[rootId] ?? {};
+    if (input.title !== undefined) {
+      if (typeof input.title !== "string" || !input.title.trim() || input.title.length > 200) throw new ApiError(400, "invalid title");
+      metadata.title = input.title.trim();
+    }
+    for (const field of ["pinned", "archived"] as const) if (input[field] !== undefined) {
+      if (typeof input[field] !== "boolean") throw new ApiError(400, `${field} must be a boolean`);
+      metadata[field] = input[field];
+    }
+    workspace.state.conversations[rootId] = metadata; workspace.save();
+    sendJson(res, 200, { conversation: conversationList(new URL("http://localhost/")).find((item) => item.rootRunId === rootId) ?? { rootRunId: rootId, ...metadata } }); return;
+  }
+  if (url.pathname === "/api/usage" && req.method === "GET") {
+    const entries = [...runs.values()].flatMap((record) => record.events.flatMap((event) => event.type === "run-finished" ? [{ runId: record.snapshot.runId, model: record.snapshot.model, status: event.status, createdAt: event.ts, inputTokens: event.usage?.inputTokens ?? 0, outputTokens: event.usage?.outputTokens ?? 0, providerRequestId: event.usage?.providerRequestId }] : []));
+    sendJson(res, 200, { usage: { runs: runs.size, completedRuns: entries.filter((entry) => entry.status === "completed").length, inputTokens: entries.reduce((sum, entry) => sum + entry.inputTokens, 0), outputTokens: entries.reduce((sum, entry) => sum + entry.outputTokens, 0), images: workspace.state.images.length, entries, billing: "local", credits: null } }); return;
+  }
+  if (url.pathname === "/api/runtime" && req.method === "GET") {
+    sendJson(res, 200, { runtime: { executor, localOnly: true, persistence: "local-disk", cwd: codexCwd, sandbox: codexSandbox, imageGenerationConfigured: workspace.imageConfigured() } }); return;
+  }
+  if (url.pathname === "/api/models" && req.method === "GET") {
+    const models = codexClient ? await codexClient.listModels().catch(() => []) : [];
+    sendJson(res, 200, { models: [{ id: "auto", name: "Auto", description: "Use your local Codex default model" }, ...models] }); return;
+  }
+  const artifactMatch = url.pathname.match(/^\/api\/runs\/(run_[a-zA-Z0-9]+)\/files\/(artifact_[a-f0-9]{24})(?:\/(content|preview))?$/);
+  if (req.method === "GET" && artifactMatch?.[1] && artifactMatch[2]) {
+    const record = runs.get(artifactMatch[1]);
+    if (!record) throw new ApiError(404, "run not found");
+    const revisionInput = url.searchParams.get("revision");
+    if (revisionInput !== null && !/^[1-9]\d{0,5}$/.test(revisionInput)) throw new ApiError(400, "invalid artifact revision");
+    const file = [...record.events].reverse().find((event) => event.type === "file" && event.file.fileId === artifactMatch[2] && (revisionInput === null || event.file.revision === Number(revisionInput)));
+    if (file?.type !== "file") throw new ApiError(404, "artifact not found");
+    const bytes = readCapturedArtifact(localStore.directory, record.snapshot.runId, file.file);
+    const action = artifactMatch[3];
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'");
+    if (action === "content") {
+      if (!file.file.contentUrl || !isTextArtifact(bytes)) throw new ApiError(415, "artifact is not available as text");
+      sendJson(res, 200, { name: file.file.name, path: file.file.path, mimeType: file.file.mimeType, sizeBytes: bytes.length, content: bytes.subarray(0, 256 * 1024).toString("utf8"), truncated: bytes.length > 256 * 1024 }); return;
+    }
+    if (action === "preview" && (!file.file.previewUrl || !canPreviewArtifact(file.file.mimeType))) throw new ApiError(415, "this artifact has no inline preview");
+    res.setHeader("Content-Type", action === "preview" ? file.file.mimeType : "application/octet-stream");
+    res.setHeader("Content-Disposition", `${action === "preview" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.file.name)}`);
+    res.setHeader("Content-Length", bytes.length);
+    res.end(bytes); return;
+  }
+  if (await workspace.handle(req, res, url, () => conversationList(new URL("http://localhost/")))) return;
+
+  const requestListMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/requests$/);
+  if (req.method === "GET" && requestListMatch?.[1]) {
+    const record = runs.get(requestListMatch[1]);
+    if (!record) throw new ApiError(404, "run not found");
+    sendJson(res, 200, { requests: [...record.userRequests.values()].filter((request) => !request.resolved).map((request) => request.public) }); return;
+  }
+  const requestResponseMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/requests\/([^/]+)$/);
+  if (req.method === "POST" && requestResponseMatch?.[1] && requestResponseMatch[2]) {
+    const record = runs.get(requestResponseMatch[1]);
+    if (!record) throw new ApiError(404, "run not found");
+    const request = record.userRequests.get(requestResponseMatch[2]);
+    if (!request) throw new ApiError(404, "request not found");
+    if (request.resolved || isTerminalStatus(record.snapshot.status) || record.cancelRequested) throw new ApiError(409, "request is already resolved");
+    const input = await readJson(req) as Record<string, unknown>;
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new ApiError(400, "invalid response");
+    let response: unknown;
+    if (request.public.kind === "approval") {
+      if (input.decision !== "accept" && input.decision !== "decline") throw new ApiError(400, "decision must be accept or decline");
+      response = { decision: input.decision };
+    } else {
+      const values = codexRecord(input.answers);
+      if (!values) throw new ApiError(400, "answers must be an object");
+      const answers: Record<string, { answers: string[] }> = {};
+      for (const question of request.public.questions ?? []) {
+        const value = values[question.id];
+        if (value === undefined) continue;
+        const items = typeof value === "string" ? [value] : Array.isArray(value) ? value : null;
+        if (!items || items.length > 20 || items.some((answer) => typeof answer !== "string" || answer.length > 8_000)) throw new ApiError(400, "invalid question answer");
+        answers[question.id] = { answers: items as string[] };
+      }
+      response = { answers };
+    }
+    request.resolved = true;
+    const accepted = request.respond(response);
+    if (!accepted) throw new ApiError(409, "request is no longer pending");
+    if (![...record.userRequests.values()].some((candidate) => !candidate.resolved)) publishStatus(record, "running", { currentStep: "Continuing after your response" });
+    sendJson(res, 200, { resolved: true, id: request.public.id }); return;
   }
 
   const eventMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/events$/);
@@ -980,8 +1279,24 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (req.method === "POST" && url.pathname === "/api/runs") {
     try {
-      const request = validateRunRequest(await readJson(req));
-      const { record, replayed } = createRun(request);
+      const input = await readJson(req);
+      const request = validateRunRequest(input);
+      const extra = input as Record<string, unknown>;
+      const projectId = extra.projectId === undefined || extra.projectId === null || extra.projectId === "" ? undefined : extra.projectId;
+      if (projectId !== undefined && (typeof projectId !== "string" || projectId.length > 100)) throw new HttpError(400, "invalid projectId");
+      const stringIds = (value: unknown, field: string): string[] | undefined => {
+        if (value === undefined) return undefined;
+        if (!Array.isArray(value) || value.length > 30 || value.some((item) => typeof item !== "string" || item.length > 100)) throw new HttpError(400, `invalid ${field}`);
+        return [...new Set(value as string[])].sort();
+      };
+      const skillIds = stringIds(extra.skillIds, "skillIds");
+      const knowledgeIds = stringIds(extra.knowledgeIds, "knowledgeIds");
+      let contextPaths: string[] | undefined;
+      if (extra.contextPaths !== undefined) {
+        if (!Array.isArray(extra.contextPaths) || extra.contextPaths.length > 10 || extra.contextPaths.some((path) => typeof path !== "string" || !path.trim() || path.length > 1000)) throw new HttpError(400, "invalid contextPaths");
+        contextPaths = [...new Set((extra.contextPaths as string[]).map((path) => path.trim()))].sort();
+      }
+      const { record, replayed } = createRun(request, { ...(projectId ? { projectId: projectId as string } : {}), ...(skillIds ? { skillIds } : {}), ...(knowledgeIds ? { knowledgeIds } : {}), ...(contextPaths ? { contextPaths } : {}) });
       if (replayed) res.setHeader("Idempotency-Replayed", "true");
       sendJson(res, 202, {
         runId: record.snapshot.runId,
@@ -989,10 +1304,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         eventsUrl: `/api/runs/${record.snapshot.runId}/events`,
         conversationId: conversationIdOf(record),
         rootRunId: rootRunIdOf(record),
+        projectId: record.projectId ?? null,
         ...(record.snapshot.parentRunId === undefined ? {} : { parentRunId: record.snapshot.parentRunId })
       });
     } catch (error: unknown) {
-      const statusCode = error instanceof HttpError ? error.statusCode : error instanceof IdempotencyConflictError ? 409 : 400;
+      const statusCode = error instanceof HttpError || error instanceof ApiError ? error.statusCode : error instanceof IdempotencyConflictError ? 409 : 400;
       sendJson(res, statusCode, { error: error instanceof Error ? error.message : "invalid request" });
     }
     return;
@@ -1005,6 +1321,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (!record) return sendJson(res, 404, { error: "run not found" });
     if (!isTerminalStatus(record.snapshot.status) && !record.cancelRequested) {
       record.cancelRequested = true;
+      for (const request of record.userRequests.values()) if (!request.resolved) { request.resolved = true; request.respond(request.public.kind === "question" ? { answers: {} } : { decision: "decline" }); }
       publishStatus(record, "cancelling", { currentStep: "Cancellation requested" });
       if (codexClient && record.codexThreadId && record.codexTurnId) {
         void codexClient.interrupt(record.codexThreadId, record.codexTurnId).catch((error: unknown) => {
@@ -1025,22 +1342,37 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   sendJson(res, 404, { error: "not found" });
 }
 
+restorePersistedRuns();
+
 export const server = createServer((req, res) => {
   void handle(req, res).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : "internal server error";
-    if (!res.headersSent) sendJson(res, 500, { error: message });
+    if (!res.headersSent) sendJson(res, error instanceof ApiError || error instanceof HttpError ? error.statusCode : 500, { error: safeCodexText(message, 2000) ?? "internal server error" });
     else res.end();
   });
 });
 
+server.once("close", releaseDataLock);
+
 server.listen(port, "127.0.0.1", () => {
-  console.log(`OpenRigor API listening on http://127.0.0.1:${port}`);
+  console.log(`OpenRigor API listening on http://127.0.0.1:${(server.address() as { port: number }).port}`);
 });
 
 function shutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`received ${signal}; closing API`);
-  void codexClient?.close().finally(() => server.close(() => process.exit(0)));
-  if (!codexClient) server.close(() => process.exit(0));
+  // SSE is intentionally long-lived, so server.close() cannot drain it on
+  // its own. End streams before waiting for HTTP shutdown; otherwise a dev
+  // watcher can orphan the old API while it still owns the durable-store lock.
+  for (const stream of eventStreams) stream.end();
+  const deadline = setTimeout(() => { server.closeAllConnections(); process.exit(0); }, 3_000);
+  deadline.unref();
+  const finish = (): void => {
+    server.close(() => { clearTimeout(deadline); process.exit(0); });
+  };
+  if (codexClient) void codexClient.close().catch(() => undefined).finally(finish);
+  else finish();
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));

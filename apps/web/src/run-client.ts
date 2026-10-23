@@ -1,3 +1,12 @@
+import type { RunEvent } from "@openrigor/protocol";
+
+/** Native EventSource transport errors share a name with persisted run errors. */
+export function parseRunStreamEvent(raw: { type: string; data?: unknown }): RunEvent | null {
+  if (raw.type === "error" && typeof raw.data !== "string") return null;
+  if (typeof raw.data !== "string") throw new Error("Run event is missing its data");
+  return JSON.parse(raw.data) as RunEvent;
+}
+
 /**
  * A browser can retain a completed conversation after the in-memory API has
  * restarted. The next continuation then receives this one specific response.

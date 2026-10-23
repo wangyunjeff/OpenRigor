@@ -40,6 +40,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { isComposerComposing } from "@/composer-keyboard";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,
@@ -54,6 +55,7 @@ import type {
   ChangeEvent,
   ChangeEventHandler,
   ClipboardEventHandler,
+  CompositionEvent,
   ComponentProps,
   FormEvent,
   FormEventHandler,
@@ -956,17 +958,21 @@ export type PromptInputTextareaProps = ComponentProps<
 export const PromptInputTextarea = ({
   onChange,
   onKeyDown,
+  onCompositionStart,
+  onCompositionEnd,
   className,
   placeholder = "What would you like to know?",
   ...props
 }: PromptInputTextareaProps) => {
   const controller = useOptionalPromptInputController();
   const attachments = usePromptInputAttachments();
-  const [isComposing, setIsComposing] = useState(false);
+  const composingRef = useRef(false);
 
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = useCallback(
     (e) => {
-      // Call the external onKeyDown handler first
+      // IME confirmation and candidate navigation belong to the input method,
+      // including before the application's submit/palette handler runs.
+      if (isComposerComposing(e, composingRef.current)) return;
       onKeyDown?.(e);
 
       // If the external handler prevented default, don't run internal logic
@@ -975,9 +981,6 @@ export const PromptInputTextarea = ({
       }
 
       if (e.key === "Enter") {
-        if (isComposing || e.nativeEvent.isComposing) {
-          return;
-        }
         if (e.shiftKey) {
           return;
         }
@@ -1008,7 +1011,7 @@ export const PromptInputTextarea = ({
         }
       }
     },
-    [onKeyDown, isComposing, attachments]
+    [onKeyDown, attachments]
   );
 
   const handlePaste: ClipboardEventHandler<HTMLTextAreaElement> = useCallback(
@@ -1038,8 +1041,8 @@ export const PromptInputTextarea = ({
     [attachments]
   );
 
-  const handleCompositionEnd = useCallback(() => setIsComposing(false), []);
-  const handleCompositionStart = useCallback(() => setIsComposing(true), []);
+  const handleCompositionEnd = useCallback((event: CompositionEvent<HTMLTextAreaElement>) => { composingRef.current = false; onCompositionEnd?.(event); }, [onCompositionEnd]);
+  const handleCompositionStart = useCallback((event: CompositionEvent<HTMLTextAreaElement>) => { composingRef.current = true; onCompositionStart?.(event); }, [onCompositionStart]);
 
   const controlledProps = controller
     ? {

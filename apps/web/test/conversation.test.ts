@@ -205,3 +205,96 @@ test("uses complete parts as authoritative replacements for legacy reused answer
   assert.equal(projection.answer, "jeff\n\nDONE");
   assert.deepEqual(projection.messages.map((message) => message.text), ["jeff\n\nDONE"]);
 });
+
+test("replays ordered provider plans without inventing completed steps", () => {
+  const initial: RunEvent = {
+    ...eventBase("run_child", 1),
+    type: "plan",
+    explanation: "Inspect the evidence before calculating.",
+    steps: [{ step: "Find primary papers", status: "in_progress" }, { step: "Compare methods", status: "pending" }]
+  };
+  const updated: RunEvent = {
+    ...eventBase("run_child", 3),
+    type: "plan",
+    steps: [{ step: "Find primary papers", status: "completed" }, { step: "Compare methods", status: "in_progress" }]
+  };
+  const events: RunEvent[] = [
+    initial,
+    { ...eventBase("run_child", 2), type: "part-delta", partId: "answer", kind: "text", delta: "The evidence " },
+    updated,
+    { ...eventBase("run_child", 4), type: "part-delta", partId: "answer", kind: "text", delta: "is limited." },
+    { ...eventBase("run_child", 5), type: "run-finished", status: "completed" }
+  ];
+
+  const projection = projectRunEvents(events);
+  const replay = projectRunEvents([events[4]!, events[3]!, initial, updated, events[1]!, initial, events[1]!, updated]);
+  assert.deepEqual(replay, projection);
+  assert.equal(projection.answer, "The evidence is limited.");
+  assert.equal(projection.plan?.eventId, updated.eventId);
+  assert.equal(projection.plan?.firstAt, initial.ts);
+  assert.equal(projection.plan?.lastAt, updated.ts);
+  assert.equal(projection.plan?.firstIndex, 0);
+  assert.equal(projection.plan?.explanation, undefined);
+  assert.deepEqual(projection.plan?.steps, [
+    { step: "Find primary papers", status: "completed" },
+    { step: "Compare methods", status: "in_progress" }
+  ]);
+  assert.deepEqual(projection.timeline.map((item) => item.kind), ["message"]);
+});
+
+test("collects only event-backed search sources, merges metadata, and preserves first-seen order", () => {
+  const events: RunEvent[] = [
+    { ...eventBase("run_child", 1), type: "part", part: { partId: "answer", kind: "text", text: "See [a claimed paper](https://unverified.example/paper)." } },
+    { ...eventBase("run_child", 2), type: "source", source: { sourceId: "source_a", url: "https://papers.example/a#abstract", title: "First paper", toolCallId: "search_1", query: "evaluation methods", origin: "web-search" } },
+    { ...eventBase("run_child", 3), type: "source", source: { sourceId: "source_b", url: "https://papers.example/b", title: "Second paper", origin: "web-search" } },
+    { ...eventBase("run_child", 4), type: "source", source: { sourceId: "source_a", url: "https://papers.example/a#methods", title: "First paper, full title", snippet: "A reported result.", toolCallId: "search_2", origin: "web-search" } },
+    { ...eventBase("run_child", 5), type: "source", source: { sourceId: "same_document", url: "https://papers.example/a", title: "First paper, updated metadata", snippet: "An actual search snippet.", origin: "web-search" } }
+  ];
+
+  const projection = projectRunEvents([events[4]!, ...events, events[1]!, events[4]!]);
+  assert.equal(projection.sources.length, 2);
+  assert.deepEqual(projection.sources.map((source) => source.url), ["https://papers.example/a", "https://papers.example/b"]);
+  assert.equal(projection.sources[0]?.title, "First paper, updated metadata");
+  assert.equal(projection.sources[0]?.snippet, "An actual search snippet.");
+  assert.equal(projection.sources[0]?.firstAt, events[1]?.ts);
+  assert.equal(projection.sources[0]?.lastAt, events[4]?.ts);
+  assert.equal(projection.sources[0]?.firstIndex, 1);
+  assert.equal(projection.sources[1]?.firstIndex, 2);
+  assert.equal(projection.sources.some((source) => source.url.includes("unverified.example")), false);
+  assert.deepEqual(projection.timeline.map((item) => item.kind), ["message"]);
+  assert.deepEqual(projectRunEvents([events[0]!]).sources, []);
+});
+
+test("does not expose malformed or executable source URLs from replayed events", () => {
+  const urls = ["javascript:alert(1)", "data:text/html,<h1>Example</h1>", "https://user:password@example.com/paper", "not a URL"];
+  const events: RunEvent[] = urls.map((url, index) => ({
+    ...eventBase("run_child", index + 1),
+    type: "source",
+    source: { sourceId: `invalid_${index}`, url, title: "Untrusted source", origin: "web-search" }
+  }));
+  assert.deepEqual(projectRunEvents(events).sources, []);
+});
+
+test("merges artifact revisions at their first timeline position and keeps the latest content", () => {
+  const initial: RunEvent = { ...eventBase("run_child", 1), type: "file", file: { fileId: "report", name: "report.md", mimeType: "text/markdown", revision: 1 } };
+  const updated: RunEvent = { ...eventBase("run_child", 4), type: "file", file: { fileId: "report", name: "report.md", mimeType: "text/markdown", revision: 2, sha256: "current", downloadUrl: "/api/files/download?path=report.md" } };
+  const events: RunEvent[] = [
+    initial,
+    { ...eventBase("run_child", 2), type: "part", part: { partId: "answer", kind: "text", text: "I revised the report." } },
+    { ...eventBase("run_child", 3), type: "file", file: { fileId: "figure", name: "figure.png", mimeType: "image/png", revision: 1 } },
+    updated,
+    { ...eventBase("run_child", 5), type: "file", file: { ...initial.file, revision: 1 } }
+  ];
+  const projection = projectRunEvents([updated, ...events, initial, updated]);
+  assert.equal(projection.files.length, 2);
+  assert.deepEqual(projection.files.map((event) => event.file.fileId), ["report", "figure"]);
+  assert.equal(projection.files[0]?.file.revision, 2);
+  assert.equal(projection.files[0]?.file.sha256, "current");
+  assert.deepEqual(projection.timeline.map((item) => item.kind), ["file", "message", "file"]);
+  const fileActivities = projection.activities.filter((activity) => activity.kind === "file");
+  assert.equal(fileActivities[0]?.firstIndex, 0);
+  assert.equal(fileActivities[0]?.event.eventId, updated.eventId);
+  const firstSegment = segmentRunTimeline(projection.timeline)[0];
+  assert.equal(firstSegment?.kind, "execution");
+  if (firstSegment?.kind === "execution") assert.equal(firstSegment.id, "execution:file:report");
+});

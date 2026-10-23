@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { streamdownComponents } from "@/lib/streamdown-components";
 import { useStreamdownPlugins } from "@/lib/streamdown-plugins";
+import { normalizeLatexDelimiters } from "@/lib/latex-delimiters";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
@@ -320,8 +321,12 @@ export const MessageBranchPage = ({
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => {
-    const plugins = useStreamdownPlugins(props.children);
+  ({ className, children, ...props }: MessageResponseProps) => {
+    const markdown = useMemo(() => normalizeLatexDelimiters(children ?? ""), [children]);
+    const plugins = useStreamdownPlugins(markdown);
+    // Streamdown 2.4 memoizes plugins but omits components and other renderer props.
+    // Refresh its configuration on a real wrapper update without remounting content.
+    const rendererPlugins = { ...(props.plugins ?? plugins) };
 
     return (
       <Streamdown
@@ -330,14 +335,13 @@ export const MessageResponse = memo(
           className
         )}
         components={streamdownComponents}
-        plugins={plugins}
         {...props}
-      />
+        plugins={rendererPlugins}
+      >
+        {markdown}
+      </Streamdown>
     );
-  },
-  (prevProps, nextProps) =>
-    prevProps.children === nextProps.children &&
-    nextProps.isAnimating === prevProps.isAnimating
+  }
 );
 
 MessageResponse.displayName = "MessageResponse";

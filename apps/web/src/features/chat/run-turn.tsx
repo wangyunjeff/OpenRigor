@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   CircleAlert,
   CircleDashed,
-  Command,
   Copy,
   Download,
   FileCode2,
@@ -54,18 +53,24 @@ import {
   type ConversationRunView,
   type ReasoningProjection,
   type RunActivity,
+  type SourceProjection,
   type ToolProjection
 } from "../../conversation";
 import {
   executionOpenTransition,
   formatToolDuration,
   isActivelyWorkingStatus,
-  presentRunActivity,
   toolElapsedMs,
-  type RunActivityPresentation
+  executionSummary
 } from "../../run-presentation";
 import { modelLabel } from "../../workspace-preferences";
-import { artifactLanguage, isTerminalTool, toolPhaseToAiState } from "./ai-elements-adapter";
+import { annotateSourceLinks, artifactLanguage, isTerminalTool, linkArtifactMarkdown, resolveArtifactUrl, toolPhaseToAiState } from "./ai-elements-adapter";
+import { RunRequestPanel } from "./request-panel";
+import { ResearchDeliverables, ResearchPlan, ResearchSources } from "./research-results";
+import { workspaceApiBase } from "../workspace/api";
+import { executionShouldOpen, messageReadingRole, toolFailureSummary, toolReadingTitle, toolShouldOpen } from "./run-reading";
+import "./run-reading.css";
+import { ActivityGlyph, RunActivityIndicator, useRunActivity } from "./run-activity";
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed";
 
@@ -93,59 +98,6 @@ function statusLabel(status: RunSnapshot["status"]): string {
 
 function isTerminalStatus(status: RunSnapshot["status"]): boolean {
   return status === "completed" || status === "failed" || status === "cancelled";
-}
-
-function useLiveNow(enabled: boolean, resetKey: string): number {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    setNowMs(Date.now());
-    if (!enabled) return;
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [enabled, resetKey]);
-
-  return nowMs;
-}
-
-function RunActivityIndicator({ view, status }: { view: RunActivityPresentation; status: RunSnapshot["status"] }): ReactElement {
-  const indicatorRef = useRef<HTMLDivElement>(null);
-
-  useGSAP(() => {
-    const root = indicatorRef.current;
-    if (!root) return;
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.timeline({ defaults: { ease: "power2.out" } })
-        .fromTo(root, { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: 0.28, clearProps: "transform,opacity,visibility" })
-        .fromTo(".run-activity-orb", { scale: 0.86 }, { scale: 1, duration: 0.36, ease: "back.out(1.6)", clearProps: "transform" }, "<")
-        .fromTo(".run-activity-copy > *", { autoAlpha: 0, y: 3 }, { autoAlpha: 1, y: 0, duration: 0.24, stagger: 0.045, clearProps: "transform,opacity,visibility" }, "<0.04")
-        .fromTo(".run-activity-meta", { autoAlpha: 0, x: 4 }, { autoAlpha: 1, x: 0, duration: 0.24, clearProps: "transform,opacity,visibility" }, "<0.05");
-
-      if (!view.animated) return;
-      const dots = gsap.utils.toArray<HTMLElement>(".run-activity-orb i", root);
-      gsap.timeline({ repeat: -1, repeatDelay: 0.16 })
-        .to(dots, { opacity: 0.96, scale: 1.24, duration: 0.34, stagger: { each: 0.075, from: "start" }, ease: "sine.out" })
-        .to(dots, { opacity: 0.2, scale: 0.88, duration: 0.46, stagger: { each: 0.075, from: "start" }, ease: "sine.in" }, 0.22);
-    }, root);
-    return () => media.revert();
-  }, { scope: indicatorRef, dependencies: [view.animated], revertOnUpdate: true });
-
-  useGSAP(() => {
-    const root = indicatorRef.current;
-    if (!root || !view.stale) return;
-    const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.fromTo(".run-activity-copy strong", { autoAlpha: 0.42, x: -3 }, { autoAlpha: 1, x: 0, duration: 0.34, ease: "power2.out", clearProps: "transform,opacity,visibility" });
-    }, root);
-    return () => media.revert();
-  }, { scope: indicatorRef, dependencies: [view.stale], revertOnUpdate: true });
-
-  return <div ref={indicatorRef} className={`run-activity${view.animated ? " is-animated" : ""}${view.stale ? " is-stale" : ""}`} data-status={status}>
-    <span className="run-activity-orb" aria-hidden="true">{Array.from({ length: 9 }, (_, index) => <i key={index} />)}</span>
-    <span className="run-activity-copy"><strong role="status" aria-live="polite">{view.headline}</strong><small>{view.detail}</small></span>
-    <span className="run-activity-meta" aria-hidden="true"><span>已用时 {view.elapsed}</span><i>·</i><span>{view.lastUpdate}</span></span>
-  </div>;
 }
 
 function AnimatedStep({ children, className = "" }: { children: ReactElement; className?: string }): ReactElement {
@@ -197,7 +149,19 @@ function ReasoningStep({ projection, isStreaming }: { projection: ReasoningProje
   </AnimatedStep>;
 }
 
-function ToolStep({ projection, output, nowMs, active }: { projection: ToolProjection; output: string | undefined; nowMs: number; active: boolean }): ReactElement {
+function ToolDiagnostics({ tool, output }: { tool: ToolProjection["event"]["tool"]; output: string | undefined }): ReactElement | null {
+  if (!output && !tool.inputSummary && !tool.diagnostic) return null;
+  return <details className="tool-diagnostics">
+    <summary><span className="tool-diagnostics-chevron" aria-hidden="true">›</span><span>诊断详情</span><small>原始返回与调用参数</small></summary>
+    <div className="tool-diagnostics-body" tabIndex={0} role="region" aria-label="原始工具诊断">
+      {tool.diagnostic ? <section><h4>运行时诊断</h4><pre>{tool.diagnostic}</pre></section> : null}
+      {output ? <section><h4>工具原始返回</h4><pre>{output}</pre></section> : null}
+      {tool.inputSummary ? <section><h4>调用参数</h4><pre>{tool.inputSummary}</pre></section> : null}
+    </div>
+  </details>;
+}
+
+function ToolStep({ projection, output, nowMs, active, attention }: { projection: ToolProjection; output: string | undefined; nowMs: number; active: boolean; attention: boolean }): ReactElement {
   const phase = projection.event.tool.phase;
   const outcome = toolOutcome(projection);
   const hasFailure = outcome === "error" || outcome === "declined";
@@ -208,12 +172,12 @@ function ToolStep({ projection, output, nowMs, active }: { projection: ToolProje
     : phase === "requested" && !liveTool
     ? null
     : formatToolDuration(toolElapsedMs(projection.firstAt, projection.lastAt, liveTool, nowMs));
-  const [open, setOpen] = useState(hasFailure || pendingTool);
+  const autoOpen = toolShouldOpen(pendingTool, active, hasFailure, attention);
+  const [open, setOpen] = useState(autoOpen);
 
   useEffect(() => {
-    if (hasFailure || pendingTool) setOpen(true);
-    else if (outcome !== undefined || phase === "succeeded") setOpen(false);
-  }, [hasFailure, outcome, pendingTool, phase]);
+    setOpen(autoOpen);
+  }, [autoOpen]);
 
   const copy = outcome ? outcomeCopy(outcome) : undefined;
   const OutcomeIcon = copy?.Icon;
@@ -223,7 +187,7 @@ function ToolStep({ projection, output, nowMs, active }: { projection: ToolProje
       <ToolHeader
         type="dynamic-tool"
         toolName={projection.event.tool.name}
-        title={projection.event.tool.inputSummary ?? projection.event.tool.name.replaceAll("_", " ")}
+        title={toolReadingTitle(projection.event.tool)}
         state={toolPhaseToAiState(phase, projection.event.tool.outcome)}
         {...(copy === undefined ? {} : { statusText: copy.label })}
         {...(duration === null ? {} : { durationText: duration })}
@@ -231,12 +195,14 @@ function ToolStep({ projection, output, nowMs, active }: { projection: ToolProje
       <ToolContent>
         <div className="openrigor-tool-meta"><span>{projection.event.tool.name}</span></div>
         {copy && OutcomeIcon ? <div className={`openrigor-tool-outcome outcome-${copy.className}`}><OutcomeIcon aria-hidden="true" /><strong>{copy.label}</strong>{projection.event.tool.exitCode !== undefined ? <code>exit {projection.event.tool.exitCode}</code> : null}</div> : null}
-        {output && isTerminalTool(projection.event.tool.name) && !hasFailure
+        {hasFailure
+          ? <div className="tool-failure-reading"><p className="tool-failure-reason"><CircleAlert aria-hidden="true" /><span>{toolFailureSummary(output, projection.event.tool.diagnostic, outcome === "declined")}</span></p><ToolDiagnostics tool={projection.event.tool} output={output} /></div>
+          : output && isTerminalTool(projection.event.tool.name)
           ? <Terminal className="openrigor-terminal" output={output} isStreaming={liveTool} />
           : <ToolOutput
-            className={hasFailure ? "openrigor-tool-output is-error" : "openrigor-tool-output"}
+            className="openrigor-tool-output"
             output={output}
-            errorText={hasFailure ? (projection.event.tool.diagnostic ?? "工具执行失败") : undefined}
+            errorText={undefined}
           />}
       </ToolContent>
     </Tool>
@@ -255,7 +221,8 @@ function ActivityError({ event }: { event: Extract<RunActivity, { kind: "error" 
 function ActivityArtifact({ activity }: { activity: Extract<RunActivity, { kind: "file" | "diff" }> }): ReactElement {
   if (activity.kind === "file") {
     const event = activity.event;
-    return <AnimatedStep><Artifact className="openrigor-artifact compact-artifact"><ArtifactHeader><div><ArtifactTitle>生成文件</ArtifactTitle><ArtifactDescription>{event.file.name}</ArtifactDescription></div><div className="artifact-file-actions"><span className="artifact-revision"><FileCode2 aria-hidden="true" />r{event.file.revision}</span>{event.file.downloadUrl ? <a href={event.file.downloadUrl} download={event.file.name} target="_blank" rel="noreferrer" aria-label={`下载 ${event.file.name}`} title={`下载 ${event.file.name}`}><Download aria-hidden="true" /></a> : null}</div></ArtifactHeader></Artifact></AnimatedStep>;
+    const downloadUrl = resolveArtifactUrl(event.file.downloadUrl, workspaceApiBase);
+    return <AnimatedStep><Artifact className="openrigor-artifact compact-artifact"><ArtifactHeader><div><ArtifactTitle>生成文件</ArtifactTitle><ArtifactDescription>{event.file.name}</ArtifactDescription></div><div className="artifact-file-actions"><span className="artifact-revision"><FileCode2 aria-hidden="true" />r{event.file.revision}</span>{downloadUrl ? <a href={downloadUrl} download={event.file.name} target="_blank" rel="noreferrer" aria-label={`下载 ${event.file.name}`} title={`下载 ${event.file.name}`}><Download aria-hidden="true" /></a> : null}</div></ArtifactHeader></Artifact></AnimatedStep>;
   }
   const event = activity.event;
   const filename = event.part.partId.replace("diff:", "");
@@ -269,20 +236,27 @@ function ActivitySubagent({ event, snapshot }: { event: Extract<RunActivity, { k
 function AssistantMessageStep({
   projection,
   isStreaming,
-  isFinal,
+  readingRole,
   copied,
+  files,
+  sources,
   onCopy
 }: {
   projection: AssistantMessageProjection;
   isStreaming: boolean;
-  isFinal: boolean;
+  readingRole: ReturnType<typeof messageReadingRole>;
   copied: boolean;
+  files: Array<{ name: string; path?: string; downloadUrl?: string }>;
+  sources: SourceProjection[];
   onCopy: (answer: string) => void;
 }): ReactElement {
-  return <AnimatedStep className={isFinal ? "assistant-message-step is-final" : "assistant-message-step is-commentary"}>
-    <MessageContent className={isFinal ? "answer-block" : "assistant-commentary"}>
-      <MessageResponse isAnimating={isStreaming}>{projection.text}</MessageResponse>
-      {isFinal ? <MessageActions className="answer-actions"><MessageAction tooltip="复制回答" label="复制回答" onClick={() => onCopy(projection.text)}><Copy aria-hidden="true" /><span>{copied ? "已复制" : "复制回答"}</span></MessageAction></MessageActions> : null}
+  const isFinal = readingRole === "answer";
+  const label = isFinal ? "回答" : readingRole === "partial" ? "运行结束前的回复" : "进展更新";
+  return <AnimatedStep className={`assistant-message-step reading-message is-${readingRole}`}>
+    <MessageContent className="assistant-response-text">
+      <div className="assistant-reading-label">{label}</div>
+      <MessageResponse isAnimating={isStreaming}>{annotateSourceLinks(linkArtifactMarkdown(projection.text, files, workspaceApiBase), sources)}</MessageResponse>
+      {isFinal ? <MessageActions className="answer-actions"><MessageAction size="sm" tooltip="复制回答" label="复制回答" aria-label={copied ? "已复制" : "复制回答"} onClick={() => onCopy(projection.text)}><Copy aria-hidden="true" /><span>{copied ? "已复制" : "复制回答"}</span></MessageAction></MessageActions> : null}
     </MessageContent>
   </AnimatedStep>;
 }
@@ -294,7 +268,8 @@ function ExecutionGroup({
   toolOutput,
   nowMs,
   connection,
-  current
+  current,
+  latest
 }: {
   id: string;
   activities: RunActivity[];
@@ -303,15 +278,18 @@ function ExecutionGroup({
   nowMs: number;
   connection: ConnectionState;
   current: boolean;
+  latest: boolean;
 }): ReactElement {
   const isWorking = isActivelyWorkingStatus(snapshot.status);
-  const hasFailure = activities.some((activity) => {
+  const runningToolCount = activities.filter((activity) => activity.kind === "tool" && (activity.projection.event.tool.phase === "running" || activity.projection.event.tool.phase === "requested")).length;
+  const failureCount = activities.filter((activity) => {
     if (activity.kind === "error") return !activity.event.retryable;
     if (activity.kind !== "tool") return false;
     const outcome = toolOutcome(activity.projection);
     return outcome === "error" || outcome === "declined";
-  });
-  const autoOpen = current || hasFailure;
+  }).length;
+  const autoOpen = executionShouldOpen(snapshot.status, current, latest, failureCount > 0);
+  const newestActivitySequence = Math.max(0, ...activities.map((activity) => activity.kind === "reasoning" ? 0 : activity.kind === "tool" || activity.kind === "subagent" ? activity.projection.event.sequence : activity.event.sequence));
   const [open, setOpen] = useState(autoOpen);
   const previousOpenRef = useRef<{ runId: string; isRunning: boolean }>({ runId: id, isRunning: autoOpen });
 
@@ -323,11 +301,11 @@ function ExecutionGroup({
   }, [autoOpen, id]);
 
   return <Collapsible className="execution-group" open={open} onOpenChange={setOpen}>
-    <CollapsibleTrigger asChild><button type="button" className="execution-summary" aria-label={open ? "收起执行过程" : "展开执行过程"}><Activity aria-hidden="true" /><span>{current && isWorking ? `正在执行 · ${activities.length} 个步骤` : current && snapshot.status === "waiting_user" ? `等待继续 · ${activities.length} 个步骤` : `执行了 ${activities.length} 个步骤`}</span><span className="execution-chevron" aria-hidden="true">⌄</span></button></CollapsibleTrigger>
+    <CollapsibleTrigger asChild><button type="button" className="execution-summary" aria-label={`${open ? "收起执行过程" : "展开执行过程"}${failureCount ? `，含 ${failureCount} 条异常` : ""}`}>{current && isWorking && connection === "open" && runningToolCount > 0 ? <ActivityGlyph animated /> : <Activity aria-hidden="true" />}<span>{executionSummary({ status: snapshot.status, current, total: activities.length, runningTools: runningToolCount, connection })}</span>{failureCount ? <span className="execution-issue-count"><CircleAlert aria-hidden="true" />{failureCount} 条异常</span> : null}<span className="execution-chevron" aria-hidden="true">⌄</span></button></CollapsibleTrigger>
     <CollapsibleContent className="execution-content ai-execution-content">
       {activities.map((activity) => {
         if (activity.kind === "reasoning") return null;
-        if (activity.kind === "tool") return <ToolStep key={`tool-${activity.projection.event.tool.callId}`} projection={activity.projection} output={activity.projection.event.tool.outputSummary ?? toolOutput.get(activity.projection.event.tool.callId)} nowMs={nowMs} active={current && isWorking && connection === "open"} />;
+        if (activity.kind === "tool") return <ToolStep key={`tool-${activity.projection.event.tool.callId}`} projection={activity.projection} output={activity.projection.event.tool.outputSummary ?? toolOutput.get(activity.projection.event.tool.callId)} nowMs={nowMs} active={current && isWorking && connection === "open"} attention={activity.projection.event.sequence === newestActivitySequence && (current || (latest && snapshot.status === "failed"))} />;
         if (activity.kind === "subagent") return <ActivitySubagent key={`subagent-${activity.projection.event.subagent.subagentRunId}`} event={activity.projection.event} snapshot={snapshot} />;
         if (activity.kind === "file" || activity.kind === "diff") return <ActivityArtifact key={`${activity.kind}-${activity.event.eventId}`} activity={activity} />;
         return <ActivityError key={`error-${activity.event.eventId}`} event={activity.event} />;
@@ -356,42 +334,41 @@ function CompletionLine({ elapsed, updatedAt, usage }: { elapsed: string; update
 }
 
 export function RunTurn({ run, copied, onCopy, connection }: { run: ConversationRunView; copied: boolean; onCopy: (runId: string, answer: string) => void; connection: ConnectionState }): ReactElement {
-  const { messages, toolOutput, timeline, usage } = useMemo(() => projectRunEvents(run.events), [run.events]);
+  const { answer, messages, toolOutput, timeline, usage, files, plan, sources } = useMemo(() => projectRunEvents(run.events), [run.events]);
+  const downloadableFiles = files.map((event) => event.file);
   const snapshot = run.snapshot;
   const isRunning = !isTerminalStatus(snapshot.status);
   const isWorking = isActivelyWorkingStatus(snapshot.status);
-  const nowMs = useLiveNow(isRunning, snapshot.runId);
-  const latestEventAt = run.events.at(-1)?.ts ?? snapshot.updatedAt;
-  const activity = presentRunActivity(snapshot, latestEventAt, nowMs);
-  const visibleActivity: RunActivityPresentation = connection === "open"
-    ? activity
-    : connection === "connecting"
-      ? { ...activity, animated: true, stale: false, headline: "正在恢复实时状态", detail: "正在重新连接事件流" }
-      : { ...activity, animated: false, stale: false, headline: "实时状态未连接", detail: "任务可能仍在后台运行" };
+  const { view: activity, nowMs } = useRunActivity(run, connection);
   const timelineSegments = useMemo(() => segmentRunTimeline(timeline), [timeline]);
   const latestTimelineSegment = timelineSegments.at(-1);
   const activeExecutionId = isRunning && latestTimelineSegment?.kind === "execution" ? latestTimelineSegment.id : undefined;
+  const latestExecutionId = timelineSegments.filter((segment) => segment.kind === "execution").at(-1)?.id;
   const latestMessagePartId = messages.at(-1)?.partId;
-  const activeReasoningPartId = isWorking && latestTimelineSegment?.kind === "reasoning" ? latestTimelineSegment.projection.partId : undefined;
-  return <section className="conversation-turn" data-run-id={run.runId}>
+  const activeReasoningPartId = isWorking && connection === "open" && latestTimelineSegment?.kind === "reasoning" ? latestTimelineSegment.projection.partId : undefined;
+  return <section className="conversation-turn" data-run-id={run.runId} aria-busy={isWorking && connection === "open"}>
     <Message from="user" className="openrigor-message user-turn">
       <MessageContent className="user-bubble">{run.visiblePrompt}</MessageContent>
       <div className="turn-meta"><span>{formatTime(snapshot.createdAt)}</span><span>{modelLabel(snapshot.model)}</span></div>
     </Message>
 
     <Message from="assistant" className="openrigor-message assistant-turn">
-      <div className="assistant-heading"><span className="assistant-mark"><Command aria-hidden="true" /></span><span><strong>OpenRigor</strong><small className={`run-status status-${snapshot.status}`}><span />{statusLabel(snapshot.status)}</small></span><code>{compactId(snapshot.runId)}</code></div>
+      <div className="assistant-heading"><span className="assistant-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 7h10a8 8 0 0 1 0 16H8V7Z" /><path d="M8 15h10M15 15l9 10M12 7v16" /></svg></span><span><strong>OpenRigor</strong><small className={`run-status status-${snapshot.status}`}><span />{statusLabel(snapshot.status)}</small></span><code>{compactId(snapshot.runId)}</code></div>
 
-      {isRunning ? <RunActivityIndicator view={visibleActivity} status={snapshot.status} /> : null}
+      {plan ? <ResearchPlan plan={plan} active={isWorking && connection === "open"} /> : null}
 
       {timelineSegments.length ? <div className="run-timeline">
         {timelineSegments.map((segment) => segment.kind === "message"
-          ? <AssistantMessageStep key={`message-${segment.projection.partId}`} projection={segment.projection} isStreaming={isWorking && !segment.projection.done && segment.projection.partId === latestMessagePartId} isFinal={segment.projection.partId === latestMessagePartId} copied={copied} onCopy={(answer) => onCopy(run.runId, answer)} />
+          ? <AssistantMessageStep key={`message-${segment.projection.partId}`} projection={segment.projection} files={downloadableFiles} sources={sources} isStreaming={isWorking && connection === "open" && !segment.projection.done && segment.projection.partId === latestMessagePartId} readingRole={messageReadingRole(snapshot.status, segment.projection.partId === latestMessagePartId, segment.projection.done)} copied={copied} onCopy={(answer) => onCopy(run.runId, answer)} />
           : segment.kind === "reasoning"
             ? <ReasoningStep key={`reasoning-${segment.projection.partId}`} projection={segment.projection} isStreaming={segment.projection.partId === activeReasoningPartId} />
-            : <ExecutionGroup key={segment.id} id={`${snapshot.runId}:${segment.id}`} activities={segment.activities} snapshot={snapshot} toolOutput={toolOutput} nowMs={nowMs} connection={connection} current={segment.id === activeExecutionId} />)}
+            : <ExecutionGroup key={segment.id} id={`${snapshot.runId}:${segment.id}`} activities={segment.activities} snapshot={snapshot} toolOutput={toolOutput} nowMs={nowMs} connection={connection} current={segment.id === activeExecutionId} latest={segment.id === latestExecutionId} />)}
       </div> : null}
+      {isRunning ? <RunActivityIndicator view={activity} /> : null}
+      <ResearchSources sources={sources} answer={answer} />
+      <ResearchDeliverables files={downloadableFiles} />
       {snapshot.status === "completed" ? <CompletionLine elapsed={activity.elapsed} updatedAt={snapshot.updatedAt} usage={usage} /> : null}
+      <RunRequestPanel runId={snapshot.runId} status={snapshot.status} />
     </Message>
   </section>;
 }

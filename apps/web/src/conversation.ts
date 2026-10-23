@@ -60,6 +60,20 @@ export interface AssistantMessageProjection {
   done: boolean;
 }
 
+/** The latest provider plan, with its original position retained across updates. */
+export type PlanProjection = Extract<RunEvent, { type: "plan" }> & {
+  firstAt: string;
+  lastAt: string;
+  firstIndex: number;
+};
+
+/** Sources are evidence reported by search events, never inferred from prose. */
+export type SourceProjection = Extract<RunEvent, { type: "source" }>["source"] & {
+  firstAt: string;
+  lastAt: string;
+  firstIndex: number;
+};
+
 export type RunActivity =
   | { kind: "reasoning"; projection: ReasoningProjection }
   | { kind: "tool"; projection: ToolProjection }
@@ -87,6 +101,8 @@ export interface RunProjection {
   tools: ToolProjection[];
   diffs: Array<Extract<RunEvent, { type: "part" }>>;
   files: Array<Extract<RunEvent, { type: "file" }>>;
+  plan?: PlanProjection;
+  sources: SourceProjection[];
   subagents: SubagentProjection[];
   errors: Array<Extract<RunEvent, { type: "error" }>>;
   /** Activities ordered by their first provider event, with tool lifecycles merged. */
@@ -105,6 +121,7 @@ function runActivityId(activity: RunActivity): string {
   if (activity.kind === "reasoning") return `reasoning:${activity.projection.partId}`;
   if (activity.kind === "tool") return `tool:${activity.projection.event.tool.callId}`;
   if (activity.kind === "subagent") return `subagent:${activity.projection.event.subagent.subagentRunId}`;
+  if (activity.kind === "file") return `file:${activity.event.file.fileId}`;
   return `${activity.kind}:${activity.event.eventId}`;
 }
 
@@ -204,10 +221,14 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
   const toolOutput = new Map<string, string>();
   const projectedTools = new Map<string, ToolProjection>();
   const projectedSubagents = new Map<string, SubagentProjection>();
+  const projectedFiles = new Map<string, { event: Extract<RunEvent, { type: "file" }>; firstIndex: number }>();
+  const projectedSources = new Map<string, SourceProjection>();
+  const sourceIds = new Map<string, string>();
+  const sourceUrls = new Map<string, string>();
   const diffs: RunProjection["diffs"] = [];
-  const files: RunProjection["files"] = [];
   const errors: RunProjection["errors"] = [];
   const activities = new Map<string, RunActivity>();
+  let plan: PlanProjection | undefined;
   let usage: UsageSummary | undefined;
 
   const recordAnswer = (
@@ -240,7 +261,35 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
     });
   };
 
-  events.forEach((event, index) => {
+  // Reconnection can replay an already received range. Normalize here as well
+  // as on restore so duplicate deltas never corrupt a projected answer.
+  dedupeAndSortEvents(events).forEach((event, index) => {
+    if (event.type === "plan") {
+      plan = {
+        ...event,
+        firstAt: plan?.firstAt ?? event.ts,
+        lastAt: event.ts,
+        firstIndex: plan?.firstIndex ?? index
+      };
+      return;
+    }
+
+    if (event.type === "source") {
+      const urlKey = sourceUrlKey(event.source.url);
+      if (urlKey === undefined) return;
+      const key = sourceIds.get(event.source.sourceId) ?? sourceUrls.get(urlKey) ?? event.source.sourceId;
+      const previous = projectedSources.get(key);
+      sourceIds.set(event.source.sourceId, key);
+      sourceUrls.set(urlKey, key);
+      projectedSources.set(key, {
+        ...event.source,
+        firstAt: previous?.firstAt ?? event.ts,
+        lastAt: event.ts,
+        firstIndex: previous?.firstIndex ?? index
+      });
+      return;
+    }
+
     if (event.type === "part-delta") {
       if (event.partId.startsWith("tool:")) {
         const callId = event.partId.slice(5);
@@ -290,8 +339,11 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
     }
 
     if (event.type === "file") {
-      files.push(event);
-      activities.set(`file:${event.eventId}`, { kind: "file", event, firstIndex: index });
+      const previous = projectedFiles.get(event.file.fileId);
+      if (previous && previous.event.file.revision > event.file.revision) return;
+      const firstIndex = previous?.firstIndex ?? index;
+      projectedFiles.set(event.file.fileId, { event, firstIndex });
+      activities.set(`file:${event.file.fileId}`, { kind: "file", event, firstIndex });
       return;
     }
 
@@ -365,13 +417,27 @@ export function projectRunEvents(events: RunEvent[]): RunProjection {
     toolOutput,
     tools: [...projectedTools.values()].sort((left, right) => left.firstIndex - right.firstIndex),
     diffs,
-    files,
+    files: [...projectedFiles.values()].sort((left, right) => left.firstIndex - right.firstIndex).map(({ event }) => event),
+    ...(plan === undefined ? {} : { plan }),
+    sources: [...projectedSources.values()].sort((left, right) => left.firstIndex - right.firstIndex),
     subagents: [...projectedSubagents.values()].sort((left, right) => left.firstIndex - right.firstIndex),
     errors,
     activities: orderedActivities,
     timeline,
     usage
   };
+}
+
+function sourceUrlKey(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    if ((parsed.protocol !== "https:" && parsed.protocol !== "http:") || parsed.username || parsed.password) return undefined;
+    // Section anchors do not turn the same retrieved document into a new source.
+    parsed.hash = "";
+    return parsed.href;
+  } catch {
+    return undefined;
+  }
 }
 
 function dedupeAndSortEvents(events: RunEvent[]): RunEvent[] {

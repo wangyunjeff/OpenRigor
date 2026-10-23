@@ -1,0 +1,39 @@
+.ws-project-save-actions { flex-wrap: wrap; justify-content: space-between; }
+.ws-project-save-state { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.ws-project-save-state.is-dirty { color: var(--text-soft); }
+.ws-draft-indicator { display: inline-flex; align-items: center; gap: 5px; margin-left: 9px; color: var(--text-soft); }
+.ws-draft-indicator::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.ws-knowledge-editor { padding: 18px; border: 1px solid var(--line-strong); border-radius: 13px; background: var(--fill-subtle); }
+.ws-knowledge-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -3px -3px -5px 0; }
+.ws-knowledge-editor-heading > span { display: flex; align-items: center; gap: 8px; color: var(--text-soft); font-size: 12px; font-weight: 500; }
+.ws-knowledge-editor-heading > span > svg { width: 14px; height: 14px; color: var(--muted); }
+.ws-knowledge-limit { justify-self: end; color: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ws-knowledge-editor-actions { flex-wrap: wrap; justify-content: space-between; }
+.ws-knowledge-editor-actions .ws-field-hint { margin: 0; }
+.ws-knowledge-saved { margin: 0 0 16px; }
+.ws-knowledge-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
+.ws-knowledge-list article.ws-knowledge-editing { border-color: var(--line-strong); background: var(--fill-subtle); }
+.ws-file-breadcrumb-links { flex-wrap: wrap; gap: 5px; margin-bottom: 16px; padding: 10px 0; }
+.ws-file-breadcrumb-links button:not(.ws-icon-button) { border-radius: 5px; padding: 3px 5px; text-align: left; max-width: 100%; line-height: 1.5; }
+.ws-file-breadcrumb-links button:not(.ws-icon-button):hover { background: var(--fill-hover); color: var(--text); }
+.ws-file-breadcrumb-links button[aria-current="page"] { color: var(--text-soft); }
+.ws-file-crumb { display: inline-flex; align-items: center; gap: 3px; min-width: 0; }
+.ws-file-crumb > svg { width: 12px; height: 12px; flex-shrink: 0; color: var(--faint); }
+.ws-file-crumb > button { overflow-wrap: anywhere; }
+.ws-file-breadcrumb-links > .ws-icon-button { margin-left: auto; }
+.ws-file-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 10px; }
+.ws-file-toolbar > .ws-search-field { max-width: 300px; min-width: 0; padding: 8px 10px; border-radius: 9px; }
+.ws-file-toolbar > .ws-search-field input { font-size: 11px; }
+.ws-file-toolbar > .ws-search-field > button { display: grid; place-items: center; flex-shrink: 0; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; color: var(--muted); background: transparent; }
+.ws-file-toolbar > .ws-search-field > button:hover { color: var(--text); background: var(--fill-hover); }
+.ws-file-toolbar > .ws-search-field > button > svg { width: 12px; height: 12px; }
+.ws-file-toolbar > span { flex-shrink: 0; color: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ws-file-empty { min-height: 130px; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; padding: 24px; color: var(--faint); text-align: center; }
+.ws-file-empty > svg { width: 23px; height: 23px; stroke-width: 1.3; }
+.ws-file-empty > p { margin: 0; font-size: 12px; line-height: 1.6; }
+@media (max-width: 600px) {
+  .ws-project-save-actions, .ws-knowledge-editor-actions { align-items: flex-start; flex-direction: column; }
+  .ws-project-save-actions > .ws-button, .ws-knowledge-editor-actions > .ws-button { align-self: flex-end; }
+  .ws-knowledge-editor { padding: 15px; }
+  .ws-file-toolbar { gap: 9px; }
+}

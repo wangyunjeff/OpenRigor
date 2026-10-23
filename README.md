@@ -1,124 +1,82 @@
 # OpenRigor
 
-OpenRigor is a clean-room, open-source implementation of a persistent AI-agent workspace: a chat-first product that can plan work, run tools in an isolated workspace, stream progress, survive disconnects, and return inspectable files.
+OpenRigor is a local AI-agent workspace with a chat-first interface, real Codex execution, image generation, projects, reusable skills, knowledge, and inspectable files.
 
-[![CI](https://github.com/wangyunjeff/OpenRigor/actions/workflows/ci.yml/badge.svg)](https://github.com/wangyunjeff/OpenRigor/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) · [Technical report](docs/TECHNICAL_REPORT.md) · [Frontend architecture](docs/FRONTEND_ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md)
+[![CI](https://github.com/wangyunjeff/OpenRigor/actions/workflows/ci.yml/badge.svg)](https://github.com/wangyunjeff/OpenRigor/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) · [Local implementation](docs/LOCAL_WORKSPACE.md) · [API](apps/api/README.md) · [Architecture](docs/ARCHITECTURE.md)
 
-This repository is the implementation workspace created from the ClawsGO public-product research snapshot. It does not copy ClawsGO code, branding, screenshots, text, or protected visual assets. The goal is behavioral and architectural equivalence where the behavior is publicly observable.
+The interface follows the observed ClawsGO product's navigation, dark workspace, research cards, contextual composer, image studio, skill catalog, project dialogs, and settings layout. OpenRigor uses its own code, identity, wording, and generated artwork. The research documents in `docs/` preserve the earlier investigation; the current implementation is described below.
 
-## Product gallery
+## Run locally
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/openrigor-home-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/openrigor-home-light.png">
-    <img src="docs/assets/openrigor-home-light.png" alt="OpenRigor desktop-first local agent workspace" width="100%">
-  </picture>
-</p>
+Prerequisites: Node.js **22.22.2+ on the 22.x line, 24.15.0+ on the 24.x line, or 26+**, pnpm 9.15.5, a working `codex` CLI, and an existing local Codex login or configured provider. These Node ranges cover the locked application and test dependencies, including PDF.js and jsdom; Node 20 is no longer supported by this dependency set.
 
-<p align="center"><sub>Desktop-first local agent workspace with task templates, generated previews, and a streaming task composer.</sub></p>
-
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/assets/openrigor-example-preview-dark.png" alt="OpenRigor task template preview dialog" width="100%">
-      <p><strong>Preview before sending.</strong><br><sub>Open a task template, inspect its generated visual context, and edit the draft before it becomes a run.</sub></p>
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/assets/openrigor-routing-dark.png" alt="OpenRigor TokenResearch model and reasoning controls" width="100%">
-      <p><strong>Model and routing controls.</strong><br><sub>Choose Sol, Terra, or Luna, select reasoning depth from Low to Max, and switch between Standard, Ultra, and TokenResearch routing.</sub></p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/assets/openrigor-run-dark.png" alt="OpenRigor completed task with execution step details" width="100%">
-      <p><strong>Inspectable execution.</strong><br><sub>Follow the run status, expand individual tool steps, and review the returned answer in the same conversation.</sub></p>
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/assets/openrigor-home-light.png" alt="OpenRigor light theme workspace" width="100%">
-      <p><strong>Light and dark themes.</strong><br><sub>The gallery includes the same workspace in both themes; the first image follows your GitHub color preference when supported.</sub></p>
-    </td>
-  </tr>
-</table>
-
-> The screenshots show the local single-user alpha. Hosted execution, durable history, and sandbox isolation remain on the roadmap.
-
-## Current status
-
-- Research baseline: complete. Read [the full technical report](docs/TECHNICAL_REPORT.md) and the focused [cloud runtime architecture report](docs/CLOUD_RUNTIME_ARCHITECTURE.md).
-- Working local alpha: real Codex app-server execution, streamed answers/reasoning/tools/files, SSE replay, stop/interrupt, and same-thread follow-up turns.
-- Interface: an original desktop-first operator console with preview-before-send examples, Light/Dark/System themes, Codex-style Sol/Terra/Luna and `low` through `max` controls, a separate Ultra multi-agent mode, knowledge and skill selectors, structured reasoning/tool output, and a browser-side recent-task list.
-- Frontend foundation: Vercel AI Elements and shadcn provide the accessible AI interaction primitives, OpenRigor adapters preserve its own `RunEvent` contract, AICSS informs original visual treatments without vendoring restricted source, and GSAP coordinates scoped motion with reduced-motion fallbacks.
-- Scope: one local user and one configured workspace. Recent conversations can restore their complete in-memory run chain, but runs/events are still process-memory only; attachments, approvals, queued follow-ups, and restart-safe server history are not implemented yet.
-- Production execution: intentionally not enabled. A hosted release still needs the durable worker and sandbox boundary described in the architecture docs.
-
-## Start the local Codex alpha
-
-Prerequisites: Node.js 20+, pnpm 9+, a working `codex` CLI, and an existing local Codex login.
-
-```powershell
-corepack enable
+```sh
 pnpm install
 codex --version
 codex login status
-pnpm smoke:codex
-pnpm dev:codex
+pnpm dev
 ```
 
-Open <http://127.0.0.1:5173>. `dev:codex` starts both services, fixes the Codex workspace to this repository, and uses the signed-in local Codex app-server. The browser never receives the Codex auth cache or API key.
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). `pnpm dev` and `pnpm dev:codex` start the web UI and the loopback API together. The API uses the local Codex app-server; credentials stay on the server.
 
-The default local sandbox is `workspace-write`, so Codex can work on this repository. For inspection-only use:
+The default execution directory is this repository, with `workspace-write` sandboxing and `on-request` approvals. To use another trusted local directory:
 
-```powershell
-$env:OPENRIGOR_CODEX_SANDBOX = "read-only"
-pnpm dev:codex
+```sh
+OPENRIGOR_CODEX_CWD=/absolute/path/to/workspace pnpm dev
 ```
 
-Interactive approval UI is deferred; unexpected approval and user-input requests are conservatively declined instead of hanging. Stop sends `turn/interrupt` to the active Codex turn.
+For inspection-only execution, set `OPENRIGOR_CODEX_SANDBOX=read-only`. Configuration examples are in [.env.example](.env.example). Shell environment variables configure the runtime; the API also reads the ignored `.env.imagegen.local` specifically for the image API key.
 
-To run the deterministic UI/API demo without Codex, start `pnpm dev:api` and `pnpm dev:web` in separate terminals.
+For a deterministic demonstration without Codex, run `pnpm dev:api` and `pnpm dev:web` separately. Demo responses identify themselves and do not execute tasks.
 
-Useful checks:
+## Implemented workflows
 
-```powershell
+- **Chat and execution:** real model discovery, reasoning and mode controls, ordered streamed answers and tool output, stop/interrupt, same-thread follow-ups, interactive command/file approvals, and clarification answers.
+- **History:** server-persisted conversations, search, rename, pin, archive, JSON export, deep links, complete event replay, and continuation after an API restart.
+- **Queued messages:** up to 32 browser-persisted follow-ups per conversation. Messages dispatch in order after the preceding turn finishes; a failure remains visible for retry.
+- **Projects:** dedicated directories, descriptions, instructions, tasks, knowledge notes, and file browsing. A conversation stays in its original directory.
+- **Skills:** searchable categories, install/uninstall, custom instruction workflows, and selection from the composer. Installing a skill enables an instruction profile.
+- **Files and task overview:** validated attachment uploads, a shared viewer for generated artifacts and project files, Markdown with math/diagrams/tables, CSV/TSV, static HTML, images/SVG, PDF pages, text/source, and original downloads. The viewer also shows the latest turn's recorded plan, files, sources, subagent states, and token usage. Project attachments are made available inside that project's sandbox.
+- **Web reading:** answer and source links open a public-page text reader beside the conversation, with a sandboxed website view and an original-site link. Retrieval can fail for login, subscription, verification, or JavaScript-dependent pages; it does not change the agent's recorded source verification.
+- **Image studio:** prompt/model/size controls, server-side generation and reference-image editing, original-file downloads, prompt reuse, and gallery archiving. Original bytes are preserved in `output/imagegen/`.
+- **Preferences:** local profile, light/dark/system appearance, agent persona/instructions/default model, runtime capabilities, and actual reported token usage.
+- **Home:** research starters, guides, and handoff into existing local projects and conversations. Starter cards create editable prompts.
+
+Image generation uses the provider configured in `AGENTS.md`. Set `CIYUANZHIYAN_API_KEY` in the server environment, or store it in the ignored `.env.imagegen.local`. The browser receives configuration status, never the key.
+
+## Persistence and operating boundary
+
+The default `.openrigor/` directory contains atomic workspace metadata, run metadata, fsynced append-only event journals, attachments, and project directories. A PID lock prevents two API processes from owning the same store. Restart recovery restores saved event order, idempotency keys, and conversation chains. An interrupted turn is explicitly finalized with `RUNTIME_RESTARTED`; a follow-up can resume its Codex thread. Tools are not automatically repeated after a crash.
+
+This edition runs for one trusted local operator. Cloud host provisioning is outside its scope. Hosted accounts, team permissions, subscription checkout, remote SSH management, and a production isolated worker are not implemented. The UI reports real local usage without inventing a provider balance. Codex's configured tools and sandbox determine execution capabilities; workflow cards do not install external applications.
+
+Do not expose this API publicly as a multi-user service. The production worker, identity, tenant authorization, and sandbox boundary remain described in [the architecture](docs/ARCHITECTURE.md) and [security notes](docs/SECURITY.md).
+
+## Verification
+
+```sh
 pnpm typecheck
 pnpm test
 pnpm build
 ```
 
-With the API running, the protocol smoke check can be repeated from another terminal:
+Real-provider smoke check (two turns, same conversation):
 
-```powershell
-pnpm smoke:api
-pnpm smoke:codex
+```sh
+OPENRIGOR_SMOKE_MODEL=gpt-6-luna pnpm smoke:codex
 ```
+
+Omit the variable to use the configured Codex default. Availability and response time depend on the configured provider. The deterministic API smoke check is `pnpm smoke:api` with a demo API running.
 
 ## Repository map
 
 ```text
-apps/web          Vite + React operator console
-apps/api          HTTP/SSE transport plus demo and Codex app-server executors
-packages/protocol Shared RunRequest/RunEvent contract
-infra             Local service dependencies and deployment notes
-docs              Research, architecture, protocol, security, roadmap
+apps/web          Vite + React workspace and product panels
+apps/api          Loopback HTTP/SSE API, durable local store, Codex adapter
+packages/protocol Shared backward-compatible RunRequest/RunEvent contract
+scripts           Development launcher and real/demo smoke checks
+docs              Current local implementation plus research and architecture
+infra             Future hosted-service dependencies and notes
 ```
 
-## The first real milestone
-
-Replace the demo executor with a durable queue and a sandbox provider while preserving the public protocol:
-
-1. PostgreSQL for users, workspaces, runs, events, files, and usage ledger.
-2. Redis Streams (or NATS JetStream) for dispatch and fan-out.
-3. A worker process with idempotent event writes and retry policy.
-4. A sandbox provider (gVisor/Kubernetes or Firecracker) with explicit tool capabilities.
-5. Object storage for artifacts and signed download URLs.
-
-The implementation order and acceptance criteria are in [docs/ROADMAP.md](docs/ROADMAP.md). The system boundary is documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and the wire contract is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
-
-## Clean-room and licensing boundary
-
-OpenRigor is an independent implementation. Use public behavior and public documentation as requirements, write original code and original copy, and obtain separate licenses for model APIs, fonts, icons, media, and any third-party UI source. See [docs/SECURITY.md](docs/SECURITY.md) for the security boundary and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution rules.
-
-## License
-
-MIT. See [LICENSE](LICENSE). Bundled and runtime third-party components retain their own licenses as listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Runtime provider APIs and third-party components retain their own terms and licenses.

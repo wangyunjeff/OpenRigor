@@ -9,7 +9,17 @@ const activelyWorkingStatuses = new Set<RunStatus>([
 
 export const STALE_EVENT_AFTER_MS = 10_000;
 
+export type RunActivityState = "working" | "queued" | "waiting-user" | "stopping" | "reconnecting" | "disconnected" | "completed" | "failed" | "cancelled";
+export type RunActivityConnection = "idle" | "connecting" | "open" | "closed";
+export interface RunActivityContext {
+  connection: RunActivityConnection;
+  stage?: "working" | "reasoning" | "tool" | "answer";
+  detail?: string;
+}
+
 export interface RunActivityPresentation {
+  state: RunActivityState;
+  helper: string;
   animated: boolean;
   stale: boolean;
   headline: string;
@@ -94,34 +104,84 @@ function readableStep(step: string | undefined, fallback: string): string {
   return value;
 }
 
+/** Status comes from persisted events; elapsed silence is never a heartbeat or proof of a stall. */
 export function presentRunActivity(
   snapshot: Pick<RunSnapshot, "status" | "createdAt" | "updatedAt" | "currentStep">,
   latestEventAt: string,
-  nowMs: number
+  nowMs: number,
+  context?: RunActivityContext
 ): RunActivityPresentation {
-  const animated = isActivelyWorkingStatus(snapshot.status);
+  const connection = context?.connection ?? "open";
   const latestAt = Date.parse(latestEventAt);
   const ageMs = Math.max(0, nowMs - (Number.isFinite(latestAt) ? latestAt : nowMs));
-  const canReportBackgroundWork = snapshot.status === "running" || snapshot.status === "waiting_tool";
-  const stale = canReportBackgroundWork && ageMs >= STALE_EVENT_AFTER_MS;
-
+  const terminal = snapshot.status === "completed" || snapshot.status === "failed" || snapshot.status === "cancelled";
   const fallback: Record<RunStatus, string> = {
-    queued: "正在准备运行环境",
-    running: "正在分析并执行任务",
-    waiting_tool: "正在执行工具",
-    waiting_user: "等待你的确认",
-    cancelling: "正在安全停止任务",
+    queued: "任务排队中",
+    running: "任务运行中",
+    waiting_tool: "正在调用工具",
+    waiting_user: "需要你的确认",
+    cancelling: "正在停止任务",
     completed: "任务已经完成",
     failed: "任务执行失败",
     cancelled: "任务已经停止"
   };
-
+  const stageHeadline = context?.stage === "reasoning" ? "正在思考"
+    : context?.stage === "tool" ? "正在调用工具"
+    : context?.stage === "answer" ? "正在生成回答"
+    : fallback[snapshot.status];
+  const detail = readableStep(context?.detail ?? snapshot.currentStep, fallback[snapshot.status]);
+  const state: RunActivityState = terminal ? snapshot.status as "completed" | "failed" | "cancelled"
+    : connection === "connecting" ? "reconnecting"
+    : connection !== "open" ? "disconnected"
+    : snapshot.status === "waiting_user" ? "waiting-user"
+    : snapshot.status === "queued" ? "queued"
+    : snapshot.status === "cancelling" ? "stopping" : "working";
+  const stale = state === "working" && ageMs >= STALE_EVENT_AFTER_MS;
+  let headline = snapshot.status === "running" || snapshot.status === "waiting_tool" ? stageHeadline : fallback[snapshot.status];
+  let helper = state === "waiting-user" ? "确认或回答后，任务才会继续。"
+    : state === "queued" ? "等待运行时开始处理；开始后会自动显示进展。"
+    : state === "stopping" ? "已请求停止，正在等待运行时确认。"
+    : terminal ? "" : "有新进展时会自动显示。";
+  let visibleDetail = detail;
+  if (state === "reconnecting") {
+    headline = "正在恢复实时连接";
+    visibleDetail = `最后记录：${fallback[snapshot.status]}`;
+    helper = "正在重新连接；恢复后会同步最新进度。";
+  } else if (state === "disconnected") {
+    headline = "实时连接已断开";
+    visibleDetail = `最后记录：${fallback[snapshot.status]}`;
+    helper = "暂时无法确认最新进度；任务可能仍在后台运行。";
+  } else if (stale) {
+    headline = "任务运行中，等待下一条输出";
+    helper = "暂时没有新的输出；有更新时会自动显示。";
+  }
   return {
-    animated,
+    state,
+    animated: state === "reconnecting" || (connection === "open" && isActivelyWorkingStatus(snapshot.status)),
     stale,
-    headline: stale ? "Codex 仍在处理" : fallback[snapshot.status],
-    detail: readableStep(snapshot.currentStep, fallback[snapshot.status]),
+    headline,
+    detail: visibleDetail,
+    helper,
     elapsed: formatElapsed(runElapsedMs(snapshot, nowMs)),
     lastUpdate: formatLastUpdate(ageMs)
   };
+}
+
+/** The execution rail describes actual records, rather than presenting finished tools as live. */
+export function executionSummary({ status, current, total, runningTools, connection }: {
+  status: RunStatus;
+  current: boolean;
+  total: number;
+  runningTools: number;
+  connection: RunActivityConnection;
+}): string {
+  const records = `${total} 条执行记录`;
+  if (!current || status === "completed" || status === "failed" || status === "cancelled") return records;
+  if (connection === "connecting") return `正在恢复连接 · ${records}`;
+  if (connection !== "open") return `实时连接已断开 · ${records}`;
+  if (status === "waiting_user") return `等待你的确认 · ${records}`;
+  if (status === "cancelling") return `正在停止 · ${records}`;
+  if (status === "queued") return `任务排队中 · ${records}`;
+  if (runningTools > 0) return `正在执行 ${runningTools} 个工具 · ${records}`;
+  return `${records} · 等待下一步输出`;
 }

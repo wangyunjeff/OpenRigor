@@ -12,6 +12,8 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "@openrigor/protocol": "workspace:*"
+    "@mozilla/readability": "^0.6.0",
+    "@openrigor/protocol": "workspace:*",
+    "linkedom": "^0.18.13"
   }
 }

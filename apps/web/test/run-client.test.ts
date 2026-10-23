@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isStaleContinuationResponse, requestRunStart } from "../src/run-client.ts";
+import { isStaleContinuationResponse, parseRunStreamEvent, requestRunStart } from "../src/run-client.ts";
+
+test("ignores native SSE connection errors while preserving named run errors", () => {
+  assert.equal(parseRunStreamEvent({ type: "error" }), null);
+  const event = { type: "error", runId: "run_1", seq: 2, ts: "2026-10-22T05:00:00Z", message: "Provider unavailable" };
+  assert.deepEqual(parseRunStreamEvent({ type: "error", data: JSON.stringify(event) }), event);
+});
+
+test("malformed SSE message data still surfaces as an invalid event", () => {
+  assert.throws(() => parseRunStreamEvent({ type: "status", data: "{" }), SyntaxError);
+  assert.throws(() => parseRunStreamEvent({ type: "status" }), /missing its data/);
+});
 
 test("recognizes only the explicit stale continuation response", () => {
   assert.equal(isStaleContinuationResponse(404, "continueFromRunId was not found"), true);

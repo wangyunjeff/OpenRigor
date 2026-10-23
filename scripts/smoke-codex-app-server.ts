@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { CodexAppServerClient } from "../apps/api/src/codex-app-server.js";
 
 const cwd = resolve(process.argv[2] ?? process.env.OPENRIGOR_CODEX_CWD ?? process.cwd());
+const smokeModel = process.env.OPENRIGOR_SMOKE_MODEL?.trim();
 const client = new CodexAppServerClient({
   requestTimeoutMs: 30_000,
   turnTimeoutMs: 120_000
@@ -17,6 +18,7 @@ try {
   const first = await client.run(
     {
       prompt: `Remember the token ${token} for my next message. Reply with exactly TOKEN_STORED. Do not use tools.`,
+      ...(smokeModel ? { model: smokeModel } : {}),
       cwd,
       sandbox: "read-only",
       approvalPolicy: "never",
@@ -38,6 +40,7 @@ try {
   const second = await client.run(
     {
       prompt: "What exact token did I ask you to remember in my previous message? Reply with only that token. Do not use tools.",
+      ...(smokeModel ? { model: smokeModel } : {}),
       cwd,
       threadId: first.threadId,
       sandbox: "read-only",
@@ -60,6 +63,7 @@ try {
   if (!secondAnswer.includes(token)) throw new Error(`Codex did not retain the first-turn token: ${secondAnswer || "<empty>"}`);
   console.log(JSON.stringify({
     ok: true,
+    model: smokeModel ?? "auto",
     cwd,
     threadId: first.threadId,
     firstTurnId: first.turnId,

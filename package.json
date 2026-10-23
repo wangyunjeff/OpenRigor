@@ -6,6 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@9.15.5",
   "scripts": {
+    "dev": "tsx scripts/dev-codex.ts",
     "dev:api": "pnpm --filter @openrigor/api dev",
     "dev:web": "pnpm --filter @openrigor/web dev",
     "dev:codex": "tsx scripts/dev-codex.ts",

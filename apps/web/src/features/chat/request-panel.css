@@ -1,0 +1,25 @@
+.run-request-panel { display: grid; width: 100%; gap: 14px; margin: 18px 0; }
+.run-request-card { display: grid; gap: 16px; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--surface); padding: 20px; }
+.run-request-heading { display: flex; align-items: center; gap: 10px; color: var(--text); }
+.run-request-heading > svg { color: var(--green); }
+.run-request-heading > strong { flex: 1; font-weight: 550; }
+.run-request-heading > span { color: var(--muted); font-size: 11px; }
+.run-request-description { overflow: auto; max-height: 220px; margin: 0; padding: 12px; border-radius: 10px; background: var(--fill-soft); color: var(--text-soft); font: 12px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-request-card fieldset { display: grid; min-width: 0; gap: 10px; margin: 0; border: 0; padding: 0; }
+.run-request-card legend { float: left; width: 100%; padding: 0; margin-bottom: 10px; color: var(--text-soft); line-height: 1.6; }
+.run-request-card legend > small { display: block; color: var(--muted); font-size: 11px; }
+.run-request-options { display: grid; gap: 8px; }
+.run-request-options > label { display: flex; align-items: start; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; }
+.run-request-options > label.selected { border-color: var(--muted); background: var(--fill-hover); }
+.run-request-options input { margin: 3px 0; accent-color: var(--text); }
+.run-request-options > label > span { display: grid; gap: 5px; }
+.run-request-options strong { font-size: 13px; font-weight: 500; }
+.run-request-options small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.run-request-card textarea { width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--text); padding: 12px; line-height: 1.6; }
+.run-request-actions { display: flex; justify-content: end; gap: 8px; }
+.run-request-actions button, .run-request-error button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--text); padding: 9px 15px; font-size: 12px; }
+.run-request-actions button.primary { background: var(--text); color: var(--bg); }
+.run-request-actions button:disabled { opacity: .5; }
+.run-request-error { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--danger); font-size: 12px; line-height: 1.6; }
+.run-request-error > span { flex: 1; }
+@media (max-width: 600px) { .run-request-card { padding: 15px; } .run-request-heading { flex-wrap: wrap; } .run-request-heading > span { width: 100%; padding-left: 26px; } }

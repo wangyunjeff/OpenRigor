@@ -1,4 +1,4 @@
-export type ModelId = "auto" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna";
+export type ModelId = "auto" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | (string & {});
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 export type RunMode = "standard" | "ultra";
 export type RoutingPreference = "manual" | "tokenresearch";
@@ -30,6 +30,30 @@ export const modelOptions: ModelOption[] = [
   { value: "gpt-5.6-luna", label: "GPT-5.6 Luna", description: "快速迭代与聚焦执行", group: "gpt-5.6" },
   { value: "auto", label: "Auto", description: "跟随本地 Codex 当前设置", group: "local" }
 ];
+
+/** Only models advertised by the local runtime may extend the persistent selector catalog. */
+export const modelCatalogStorageKey = "openrigor.models";
+export interface RuntimeModel { id: string; name: string; description: string }
+export function normalizeModelCatalog(value: unknown): RuntimeModel[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((entry): RuntimeModel[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const model = entry as Record<string, unknown>;
+    if (typeof model.id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model.id) || seen.has(model.id)) return [];
+    seen.add(model.id);
+    return [{ id: model.id, name: typeof model.name === "string" && model.name.trim() ? model.name.slice(0, 128) : model.id, description: typeof model.description === "string" ? model.description.slice(0, 512) : "Local runtime model" }];
+  }).slice(0, 64);
+}
+export function readStoredModelCatalog(): RuntimeModel[] {
+  if (typeof window === "undefined") return [];
+  try { return normalizeModelCatalog(JSON.parse(window.localStorage.getItem(modelCatalogStorageKey) ?? "[]")); } catch { return []; }
+}
+export function persistModelCatalog(value: unknown): RuntimeModel[] {
+  const catalog = normalizeModelCatalog(value);
+  if (typeof window !== "undefined") { try { window.localStorage.setItem(modelCatalogStorageKey, JSON.stringify(catalog)); } catch { /* Live runtime choices remain usable without storage. */ } }
+  return catalog;
+}
 
 export const effortOptions: EffortOption[] = [
   { value: "low", label: "Low", description: "更快响应" },
@@ -73,7 +97,7 @@ export function normalizeModeForModel(model: ModelId, mode: RunMode): RunMode {
 }
 
 export function modelLabel(model: string): string {
-  return modelOptions.find((option) => option.value === model)?.label ?? model;
+  return readStoredModelCatalog().find((option) => option.id === model)?.name ?? modelOptions.find((option) => option.value === model)?.label ?? model;
 }
 
 export function effortLabel(effort: string): string {
@@ -103,7 +127,7 @@ export function isRoutingPreference(value: unknown): value is RoutingPreference 
 export function normalizeManualExecutionPreference(value: unknown): ManualExecutionPreference {
   if (!value || typeof value !== "object") return defaultManualExecutionPreference;
   const candidate = value as Record<string, unknown>;
-  const model = modelOptions.some((option) => option.value === candidate.model)
+  const model = modelOptions.some((option) => option.value === candidate.model) || readStoredModelCatalog().some((option) => option.id === candidate.model)
     ? candidate.model as ModelId
     : defaultManualExecutionPreference.model;
   const effort = effortOptions.some((option) => option.value === candidate.effort)
@@ -169,12 +193,12 @@ export function resolveTheme(theme: ThemePreference, systemPrefersDark: boolean)
 }
 
 export function readStoredTheme(): ThemePreference {
-  if (typeof window === "undefined") return "system";
+  if (typeof window === "undefined") return "dark";
   try {
     const value = window.localStorage.getItem(themeStorageKey);
-    return isThemePreference(value) ? value : "system";
+    return isThemePreference(value) ? value : "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 

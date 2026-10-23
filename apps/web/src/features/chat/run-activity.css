@@ -1,0 +1,48 @@
+.run-presence { --presence-color: var(--accent); display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid color-mix(in srgb, var(--presence-color) 32%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--presence-color) 5%, var(--surface)); padding: 14px 16px; }
+.transcript-presence { margin: 22px 0 8px; }
+.run-presence[data-state="working"], .run-presence[data-state="queued"] { --presence-color: var(--gold); }
+.run-presence[data-state="waiting-user"], .run-presence[data-state="reconnecting"] { --presence-color: var(--blue); }
+.run-presence[data-state="stopping"], .run-presence[data-state="disconnected"] { --presence-color: var(--danger); }
+.activity-glyph { display: inline-grid; flex: 0 0 auto; width: 28px; height: 28px; place-items: center; color: var(--presence-color, var(--gold)); }
+.activity-glyph > svg { width: 24px; height: 24px; stroke: currentColor; stroke-width: 2; }
+.activity-glyph .activity-spinner-track { opacity: .18; }
+.activity-glyph .activity-spinner path { stroke-linecap: round; }
+.activity-glyph-core { fill: currentColor; stroke: none; }
+.run-presence-copy { min-width: 0; display: grid; gap: 5px; }
+.run-presence-copy strong { color: var(--presence-color); font-size: 13px; font-weight: 650; line-height: 1.5; }
+.run-presence-detail { color: var(--text-soft); font-size: 12px; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-presence-copy > small { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.run-presence-time { display: grid; justify-items: end; gap: 6px; color: var(--muted); white-space: nowrap; font-size: 10px; font-variant-numeric: tabular-nums; }
+.run-presence-time b { font: 11px var(--mono); font-weight: 500; color: var(--text-soft); }
+.run-presence-time small { font-size: 10px; color: var(--faint); }
+.composer-presence { width: 100%; grid-template-columns: 23px minmax(0, 1fr) auto; gap: 9px; margin: 0 0 8px; padding: 10px 13px; border-radius: 10px; }
+.composer-presence .activity-glyph { width: 22px; height: 22px; }
+.composer-presence .activity-glyph > svg { width: 20px; height: 20px; }
+.composer-presence .run-presence-copy { display: flex; align-items: baseline; gap: 12px; }
+.composer-presence strong { flex: 0 1 auto; font-size: 12px; }
+.composer-presence .run-presence-detail { flex: 1; min-width: 0; font-size: 11px; }
+.composer-presence .run-presence-time { display: flex; align-items: center; gap: 10px; }
+.recent-item > .activity-glyph { width: 14px; height: 14px; }
+.recent-item > .activity-glyph > svg { width: 14px; height: 14px; }
+.connection[data-working="true"] { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 28%, var(--line)); }
+.connection .activity-glyph { width: 15px; height: 15px; }
+.connection .activity-glyph > svg { width: 15px; height: 15px; }
+.composer-right .stop-button { display: inline-flex; width: auto; min-width: 67px; gap: 7px; padding: 0 11px; color: var(--text); border-color: var(--line-strong); }
+.composer-right .stop-button span { font-size: 11px; font-weight: 550; }
+.composer-right .stop-button:hover:not(:disabled) { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.composer-right .stop-button:disabled { opacity: .65; cursor: wait; }
+.execution-summary .activity-glyph { width: 17px; height: 17px; }
+.execution-summary .activity-glyph > svg { width: 17px; height: 17px; }
+.research-plan-step-mark .activity-glyph { width: 16px; height: 16px; }
+.research-plan-step-mark .activity-glyph > svg { width: 16px; height: 16px; }
+@media (max-width: 600px) {
+  .composer-presence .run-presence-copy { display: grid; gap: 2px; }
+  .composer-presence strong { font-size: 11px; }
+  .composer-presence .run-presence-time { display: grid; gap: 3px; }
+  .composer-presence .run-presence-time small { display: none; }
+  .run-presence { grid-template-columns: 25px minmax(0, 1fr) auto; padding: 10px; gap: 8px; }
+  .run-presence-copy strong { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-glyph .activity-glyph-core { opacity: 1; }
+}

@@ -94,7 +94,9 @@ data: {"eventId":"run_01:4","runId":"run_01","sequence":4,"ts":"2026-08-09T12:00
 | `part` | A complete text/reasoning block | Render or replace by `partId` |
 | `part-delta` | Incremental text for a block | Append by `partId`; ignore duplicate sequence |
 | `tool` | Tool request/result summary | Render safely; never execute in browser |
-| `file` | Artifact metadata or revision | Fetch through signed URL only |
+| `plan` | Real plan steps and their reported state | Replace the latest plan; never infer completion from the run status |
+| `source` | Link observed in structured search results or a page request | Merge by `sourceId`; a request does not prove successful retrieval or verification |
+| `file` | Verified artifact metadata or immutable revision | Merge by `fileId`; fetch the server-returned guarded URL |
 | `subagent` | Child run lifecycle | Group by `parentRunId` |
 | `run-finished` | Terminal result | Close stream after persisting final state |
 | `error` | Recoverable or terminal error | Show safe message and retain diagnostic id |
@@ -104,7 +106,7 @@ data: {"eventId":"run_01:4","runId":"run_01","sequence":4,"ts":"2026-08-09T12:00
 - Unknown event types must be ignored but logged.
 - Event order is guaranteed only within one `runId` and `sequence`.
 - Delivery is at least once; consumers must be idempotent.
-- `clientRequestId` is optional and scoped to the current API process in the local alpha; repeating a `POST /api/runs` with the same key and normalized payload replays the original `runId` instead of starting another run. Reusing that key with a different prompt, continuation source, or execution payload returns `409`. Production must move this index into the durable control plane.
+- `clientRequestId` is optional and persisted in the local alpha; repeating a `POST /api/runs` with the same key and normalized payload replays the original `runId` instead of starting another run, including after restart. Reusing that key with a different prompt, continuation source, or execution/context payload returns `409`. Production must move this index into its tenant-scoped durable control plane.
 - `conversationId`, `rootRunId`, `parentRunId`, `continueFromRunId`, and the `conversation` detail object are additive protocol-v0 fields. Older consumers may continue using only `snapshot` and `events`.
 - Payloads must never contain provider secrets, session cookies, or raw sandbox credentials.
 - Additive fields are compatible; changing a field's meaning requires a protocol version.
@@ -118,6 +120,9 @@ The local alpha keeps the public `RunEvent` contract stable while adapting the C
 | `item/agentMessage/delta` | `part-delta(kind=text)` with a provider-item-scoped `partId` |
 | `item/reasoning/summaryTextDelta`, `item/reasoning/textDelta` | `part-delta(kind=reasoning)` |
 | `item/started`, `item/completed` for command/file/search items | `tool` and `file` |
+| `turn/plan/updated` | `plan` with validated steps and provider provenance |
+| `item/tool/call` for the declared `openrigor_update_plan` tool | Strictly validated `plan`, then a real tool acknowledgement |
+| Structured `webSearch` results and page actions | `source`, distinguishing result metadata from a page-access attempt |
 | `item/commandExecution/outputDelta` | tool-scoped `part-delta` |
 | `thread/tokenUsage/updated` | `run-finished.usage` |
 | `turn/completed` | `run-finished` |
@@ -144,4 +149,20 @@ event table above.
 
 Codex's local shell wrapper can exit with code 0 while emitting the underlying status as `__RG_EXIT_CODE__=<n>`. The API consumes that marker for classification and removes it from browser-visible terminal output.
 
-For the local live process, the first run calls `thread/start` once and every accepted follow-up calls `turn/start` with the same `threadId`. The default ephemeral thread exists only in that app-server process. OpenRigor's run/conversation indexes are also in API memory, so API or app-server restart recovery is deliberately outside this alpha contract; cold persisted-thread recovery would additionally require `thread/resume` and durable server metadata.
+For the local live process, the first run calls `thread/start` once and every accepted follow-up calls `turn/start` with the same `threadId`. Threads default to durable. API state and ordered events are stored locally; restarting the API terminalizes unfinished runs with `RUNTIME_RESTARTED`, preserving their output. An explicit follow-up resumes the saved Codex thread with `thread/resume`. The system does not silently repeat interrupted commands.
+
+### Research output events
+
+`plan` has top-level `steps: [{step, status}]`, optional `explanation`, and optional `provenance: "provider" | "tool"`. Status is exactly `pending`, `in_progress`, or `completed`. The API declares a non-executing dynamic tool named `openrigor_update_plan` on newly created Codex threads, receives its `item/tool/call` server requests, validates arguments, persists the event, and returns `{success, contentItems}`. Native plan notifications remain supported. Identical updates are omitted. A completed run does not automatically mark its plan complete, and prose or generic Markdown checkboxes never become plan events. Tool declarations persist with new Codex threads; older threads created without the tool cannot gain it through a turn request.
+
+`source` contains `source: {sourceId, url, title, origin: "web-search", kind?, snippet?, toolCallId?, query?}`. `kind` distinguishes `search-result` metadata from a `page-request` attempt. Neither means the paper was read, its claims were verified, or the page request succeeded. Only known structured provider result containers and page actions produce these events; a query alone, shell output, or a Markdown link in the answer does not. Unsafe URL schemes, private literal hosts, userinfo and credential query strings are omitted. Consumers should use neutral wording such as “Search links” and identify page requests as attempts.
+
+`file` retains its original required metadata and adds optional `path`, `sha256`, `sizeBytes`, `downloadUrl`, `contentUrl`, and `previewUrl`. A run takes a baseline before executing, then checks for new or changed files under `artifacts/`, `output/`, `reports/`, `results/`, and `figures/`; explicit model file links and provider file-change paths are separately validated. There is no whole-workspace scan. All exposed files must be regular files within the configured workspace and pass its private-path guard; symbolic links are rejected. Discovery is limited to depth 5, 800 entries per pass, 16,000 entries per run, 60 captured revisions, 20 MiB per file and 80 MiB per run. Unchanged output files are not read or republished. Cancelled and terminal runs do not discover new files.
+
+Captured bytes are saved as immutable local copies before the `file` event is persisted. A stable per-path `fileId`, incrementing `revision`, and SHA-256 identify each version. Restart and SSE replay return the same metadata and bytes even when the original workspace file changes. Downloads verify the saved hash. Only files registered by that run can be fetched:
+
+- `GET /api/runs/:runId/files/:fileId?revision=N` downloads the immutable bytes as an attachment.
+- `GET /api/runs/:runId/files/:fileId/content?revision=N` returns JSON `{name,path,mimeType,sizeBytes,content,truncated}` for UTF-8 text, capped at 256 KiB.
+- `GET /api/runs/:runId/files/:fileId/preview?revision=N` permits only signature-checked PNG, JPEG, WebP, GIF or PDF and sends sandbox CSP plus `nosniff`.
+
+HTML and SVG receive no inline server preview URL. They can be downloaded or read as JSON source; clients must not insert untrusted markup into the application DOM. Existing `/api/files/content` and attachment-only `/api/files/download` remain available for guarded workspace browsing, independent of immutable run artifacts.

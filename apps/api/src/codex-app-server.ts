@@ -25,6 +25,15 @@ export interface CodexTurnResult {
 /** Values accepted by Codex app-server's `turn/start.effort` field. */
 export type CodexReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
+/** Verified against this runtime's experimental app-server DynamicToolSpec. */
+export interface CodexDynamicToolSpec {
+  type: "function";
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  deferLoading?: boolean;
+}
+
 export interface CodexRunOptions {
   prompt: string;
   cwd: string;
@@ -41,11 +50,16 @@ export interface CodexRunOptions {
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   approvalPolicy?: "untrusted" | "on-request" | "never";
   ephemeral?: boolean;
+  /** Declared only when creating a thread; Codex persists these for later resume. */
+  dynamicTools?: CodexDynamicToolSpec[];
 }
+
+export interface CodexServerRequest { id: string | number; method: string; params?: unknown }
 
 export interface CodexRunCallbacks {
   onSession?: (session: CodexRunSession) => void;
   onNotification?: (notification: CodexNotification) => void;
+  onServerRequest?: (request: CodexServerRequest, respond: (result: unknown) => boolean) => void;
 }
 
 export interface CodexAppServerOptions {
@@ -80,6 +94,7 @@ interface ActiveTurn {
   turnId?: string;
   complete: (result: CodexTurnResult) => void;
   notify?: (notification: CodexNotification) => void;
+  request?: (request: CodexServerRequest, respond: (result: unknown) => boolean) => void;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
@@ -134,6 +149,8 @@ export class CodexAppServerClient {
   private nextRequestId = 1;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly activeTurns = new Map<string, ActiveTurn>();
+  private readonly loadedThreads = new Set<string>();
+  private readonly pendingServerRequests = new Map<string, { threadId: string; method: string; respond: (result: unknown) => boolean }>();
 
   public constructor(options: CodexAppServerOptions = {}) {
     this.options = options;
@@ -154,11 +171,17 @@ export class CodexAppServerClient {
         ephemeral: options.ephemeral ?? false
       };
       if (options.model && options.model !== "auto") threadParams.model = options.model;
+      if (options.dynamicTools?.length) threadParams.dynamicTools = options.dynamicTools;
 
       const threadResponse = await this.request("thread/start", threadParams);
       const thread = asRecord(asRecord(threadResponse)?.thread);
       threadId = stringValue(thread?.id);
       if (!threadId) throw new Error("Codex app-server returned no thread id");
+      this.loadedThreads.add(threadId);
+    } else if (!this.loadedThreads.has(threadId)) {
+      // Threads persisted by a prior API/app-server process must be explicitly resumed.
+      await this.request("thread/resume", { threadId, cwd: options.cwd, sandbox: options.sandbox ?? "workspace-write", approvalPolicy: options.approvalPolicy ?? "never" });
+      this.loadedThreads.add(threadId);
     }
     if (this.activeTurns.has(threadId)) {
       throw new Error(`Codex thread already has an active turn: ${threadId}`);
@@ -173,7 +196,8 @@ export class CodexAppServerClient {
     const active: ActiveTurn = {
       threadId,
       complete: (result) => resolveCompletion?.(result),
-      ...(callbacks.onNotification === undefined ? {} : { notify: callbacks.onNotification })
+      ...(callbacks.onNotification === undefined ? {} : { notify: callbacks.onNotification }),
+      ...(callbacks.onServerRequest === undefined ? {} : { request: callbacks.onServerRequest })
     };
     this.activeTurns.set(threadId, active);
     try {
@@ -216,12 +240,24 @@ export class CodexAppServerClient {
         throw error;
       }
     } finally {
+      this.declinePendingRequests(threadId);
       this.activeTurns.delete(threadId);
     }
   }
 
+  public async listModels(): Promise<{ id: string; name: string; description: string }[]> {
+    await this.ensureStarted();
+    const result = asRecord(await this.request("model/list", {}));
+    const data = Array.isArray(result?.data) ? result.data : [];
+    return data.flatMap((item) => {
+      const record = asRecord(item); const id = stringValue(record?.id) ?? stringValue(record?.model);
+      return id ? [{ id, name: stringValue(record?.displayName) ?? id, description: stringValue(record?.description) ?? "" }] : [];
+    });
+  }
+
   public async interrupt(threadId: string, turnId: string): Promise<void> {
     if (!this.child || this.child.killed || this.child.exitCode !== null) return;
+    this.declinePendingRequests(threadId);
     await this.request("turn/interrupt", { threadId, turnId });
   }
 
@@ -388,15 +424,35 @@ export class CodexAppServerClient {
       }
     }
 
-    if (message.id !== undefined && message.id !== null) this.respondToServerRequest(message.id, message.method);
+    if (message.id !== undefined && message.id !== null) this.respondToServerRequest(message.id, message.method, message.params);
   }
 
-  private respondToServerRequest(id: string | number, method: string): void {
+  private respondToServerRequest(id: string | number, method: string, params?: unknown): void {
+    const requestRecord = asRecord(params);
+    const threadId = stringValue(requestRecord?.threadId);
+    const active = threadId ? this.activeTurns.get(threadId) : undefined;
+    const requestTurn = notificationTurnId(requestRecord);
+    const supported = method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval" || method === "item/tool/requestUserInput" || method === "item/tool/call";
+    if (supported && threadId && active?.request && (!requestTurn || active.turnId === requestTurn)) {
+      const key = idKey(id);
+      if (this.pendingServerRequests.has(key)) return;
+      let resolved = false;
+      const respond = (result: unknown): boolean => {
+        if (resolved) return false;
+        resolved = true; this.pendingServerRequests.delete(key); this.writeRaw({ jsonrpc: "2.0", id, result }); return true;
+      };
+      this.pendingServerRequests.set(key, { threadId, method, respond });
+      try { active.request({ id, method, ...(params === undefined ? {} : { params }) }, respond); }
+      catch { respond(method === "item/tool/call" ? { success: false, contentItems: [{ type: "inputText", text: "The local tool could not be completed." }] } : method === "item/tool/requestUserInput" ? { answers: {} } : { decision: "decline" }); }
+      return;
+    }
     let result: unknown;
     if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") {
       result = { decision: "decline" };
     } else if (method === "item/tool/requestUserInput") {
       result = { answers: {} };
+    } else if (method === "item/tool/call") {
+      result = { success: false, contentItems: [{ type: "inputText", text: "This local tool is unavailable for the active turn." }] };
     } else if (method === "mcpServer/elicitation/request") {
       result = { action: "decline", content: null };
     } else if (method === "item/permissions/requestApproval") {
@@ -412,6 +468,12 @@ export class CodexAppServerClient {
       return;
     }
     this.writeRaw({ jsonrpc: "2.0", id, result });
+  }
+
+  private declinePendingRequests(threadId?: string): void {
+    for (const request of this.pendingServerRequests.values()) {
+      if (!threadId || request.threadId === threadId) request.respond(request.method === "item/tool/call" ? { success: false, contentItems: [{ type: "inputText", text: "The local tool was interrupted." }] } : request.method === "item/tool/requestUserInput" ? { answers: {} } : { decision: "decline" });
+    }
   }
 
   private writeRaw(message: Record<string, unknown>): void {
@@ -436,6 +498,8 @@ export class CodexAppServerClient {
       active.complete({ threadId: active.threadId, turnId: active.turnId ?? "", status: "failed", error: { message } });
     }
     this.activeTurns.clear();
+    this.pendingServerRequests.clear();
+    this.loadedThreads.clear();
     this.child = null;
     const output = this.output;
     this.output = null;
