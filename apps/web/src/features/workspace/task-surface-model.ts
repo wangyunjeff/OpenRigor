@@ -65,3 +65,13 @@ export function taskPromptExcerpt(prompt: string, limit = 170): string {
   const line = task.replace(/\s+/g, " ").trim();
   return line.length > limit ? `${line.slice(0, limit - 1)}…` : line;
 }
+
+/** The prompt excerpt under a task title, or nothing when it would only repeat the title. */
+export function taskExcerptBeyondTitle(title: string, prompt: string, limit = 170): string | undefined {
+  const excerpt = taskPromptExcerpt(prompt, limit);
+  const normalize = (value: string): string => value.replace(/…$/, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const titleText = normalize(title);
+  const excerptText = normalize(excerpt);
+  if (!excerptText || titleText.startsWith(excerptText)) return undefined;
+  return excerpt;
+}

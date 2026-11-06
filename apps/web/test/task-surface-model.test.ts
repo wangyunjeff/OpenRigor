@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchesTaskStatus, patchTaskList, selectTasks, standaloneTaskScope, taskCollectionCounts, taskPromptExcerpt, taskSearchPath } from "../src/features/workspace/task-surface-model";
+import { matchesTaskStatus, patchTaskList, selectTasks, standaloneTaskScope, taskCollectionCounts, taskExcerptBeyondTitle, taskPromptExcerpt, taskSearchPath } from "../src/features/workspace/task-surface-model";
 import type { WorkspaceConversation } from "../src/features/workspace/api";
 
 const task = (id: string, value: Partial<WorkspaceConversation> = {}): WorkspaceConversation => ({ rootRunId: id, conversationId: `conversation-${id}`, latestRunId: `${id}-latest`, prompt: `Prompt ${id}`, status: "completed", updatedAt: "2026-10-22T00:00:00Z", ...value });
@@ -60,4 +60,12 @@ test("metadata-only archive and restore responses retain task identity and saved
 test("prompt excerpts exclude provider context and stay bounded", () => {
   assert.equal(taskPromptExcerpt("Private system context\n\nTask:\nResearch this question"), "Research this question");
   assert.equal(taskPromptExcerpt("a".repeat(300)).length, 170);
+});
+
+test("a task excerpt appears only when it says more than the title", () => {
+  assert.equal(taskExcerptBeyondTitle("Inspect the workspace", "Inspect the workspace"), undefined);
+  assert.equal(taskExcerptBeyondTitle("Inspect the workspace state and summarize it", "Inspect the workspace state"), undefined);
+  assert.equal(taskExcerptBeyondTitle("Inspect the workspace state, show the…", "Inspect the workspace state, show the execution steps"), "Inspect the workspace state, show the execution steps");
+  assert.equal(taskExcerptBeyondTitle("Workspace review", "Inspect the workspace state and summarize the risks"), "Inspect the workspace state and summarize the risks");
+  assert.equal(taskExcerptBeyondTitle("Summarize", "Private context\n\nTask:\nSummarize the three papers on retrieval"), "Summarize the three papers on retrieval");
 });

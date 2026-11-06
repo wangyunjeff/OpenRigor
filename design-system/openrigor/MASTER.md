@@ -213,4 +213,5 @@ Desktop acceptance comes first at `1440x1000`, followed by `1024x768`. Also smok
 - Scroll away from the bottom during streaming and verify follow mode disengages.
 - Stop a live run and confirm the UI reaches a terminal cancelled state.
 - Capture the launch, running, expanded-tool, and completed desktop states at `1440x1000`.
+- Run an automated accessibility scan (for example axe-core) on the main screens in both themes. Text tokens (`--muted`, `--faint`, `--accent`, `--blue`, `--green`) must keep at least 4.5:1 contrast on every surface they appear on.
 - Run typecheck, tests, build, Codex smoke test, and `git diff --check` before release.

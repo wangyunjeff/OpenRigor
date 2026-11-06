@@ -14,6 +14,8 @@ export interface WorkspaceSkill {
   label?: string;
   description: string;
   category?: string;
+  /** Icon name declared by the skill catalog (for example "globe" or "table"). */
+  icon?: string;
   installed: boolean;
   instructions?: string;
 }

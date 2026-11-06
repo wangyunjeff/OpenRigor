@@ -107,8 +107,8 @@
   --accent: #bb6b3d;
   --accent-strong: #a9572d;
   --accent-ink: #fff8f2;
-  --blue: #557e9f;
-  --green: #4f8062;
+  --blue: #436b8a;
+  --green: #44724f;
   --gold: #8c6a2e;
   --danger: #a95252;
   --header-bg: rgba(247, 245, 240, .92);
@@ -236,7 +236,7 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 }
 .header-left { min-width: 0; gap: 12px; }
 .header-title-group { min-width: 0; display: grid; gap: 2px; }
-.header-title-group strong { max-width: min(680px, 55vw); overflow: hidden; color: var(--text-soft); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.header-title-group .header-title { max-width: min(680px, 55vw); overflow: hidden; color: var(--text-soft); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .header-title-group small { color: var(--faint); font: 9px var(--mono); }
 .header-divider { width: 1px; height: 18px; background: var(--line-strong); }
 .header-actions { flex: 0 0 auto; gap: 8px; }
@@ -591,7 +591,7 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
   .sidebar-close, .mobile-menu { display: inline-grid; }
   .main-header { height: 58px; padding: 0 12px; }
   .header-left { gap: 9px; }
-  .header-title-group strong { max-width: calc(100vw - 180px); font-size: 11px; }
+  .header-title-group .header-title { max-width: calc(100vw - 180px); font-size: 11px; }
   .header-divider { display: none; }
   .connection { padding: 0 7px; }
   .launch-view { width: calc(100% - 28px); padding: 30px 0 22px; }
@@ -730,7 +730,7 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
   --text: #eceee8;
   --text-soft: #d5dcd4;
   --muted: #a3aca4;
-  --faint: #7e8981;
+  --faint: #909a92;
   --accent: #bacbb9;
   --accent-strong: #d5e1d2;
   --accent-ink: #1c221f;
@@ -756,9 +756,9 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
   --line-strong: rgba(35, 54, 37, .18);
   --text: #263429;
   --text-soft: #3c4d40;
-  --muted: #657568;
-  --faint: #79887b;
-  --accent: #657d6d;
+  --muted: #4f5f53;
+  --faint: #5d6c60;
+  --accent: #536a5b;
   --accent-strong: #3c5948;
   --accent-ink: #ffffff;
   --header-bg: #f7f8f3;
@@ -784,7 +784,7 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 .account-switcher > svg:first-child { width: 16px; height: 16px; color: var(--text-soft); }
 .account-switcher > strong { font-size: 14px; font-weight: 450; }
 .account-switcher > svg:last-child { width: 14px; height: 14px; margin-left: auto; color: var(--muted); }
-.plan-label { border: 1px solid var(--line); padding: 1px 5px; font: 10px/1.2 inherit; }
+.plan-label { border: 1px solid var(--line); padding: 1px 5px; font-family: inherit; font-size: 10px; line-height: 1.2; }
 .sidebar-toggle { width: 27px; height: 29px; }
 .nav-list { border: 0; border-bottom: 1px solid var(--line); padding: 16px 0 20px; gap: 4px; }
 .nav-item { min-height: 37px; height: 37px; border: 1px solid transparent; border-radius: 9px; gap: 11px; padding: 0 11px; color: var(--muted); font-size: 13px; font-weight: 450; }
@@ -792,12 +792,12 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 .nav-item:hover { box-shadow: none; background: var(--fill-hover); border-color: transparent; color: var(--text); }
 .nav-item.active { box-shadow: inset 0 1px 0 #ffffff04; background: var(--surface-raised); border-color: var(--line); color: var(--text); }
 .nav-item.active svg { color: var(--accent); }
-.nav-item small { margin: 0; border: 1px solid var(--line); border-radius: 20px; padding: 1px 6px; font: 10px/1.4 inherit; color: var(--text-soft); }
-.nav-item kbd { margin-left: auto; color: var(--faint); font: 10px inherit; opacity: 0; }
+.nav-item small { margin: 0; border: 1px solid var(--line); border-radius: 20px; padding: 1px 6px; font-family: inherit; font-size: 10px; line-height: 1.4; color: var(--text-soft); }
+.nav-item kbd { margin-left: auto; color: var(--faint); font-family: inherit; font-size: 10px; opacity: 0; }
 .nav-item:hover kbd { opacity: 1; }
 .sidebar-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 12px; scrollbar-width: thin; }
 .sidebar-section { padding-top: 17px; }
-.sidebar-label { gap: 4px; width: 100%; min-height: 28px; border: 0; background: transparent; color: var(--faint); padding: 0 8px; font: 11px/1.5 inherit; text-transform: none; text-align: left; }
+.sidebar-label { gap: 4px; width: 100%; min-height: 28px; border: 0; background: transparent; color: var(--faint); padding: 0 8px; font-family: inherit; font-size: 11px; line-height: 1.5; text-transform: none; text-align: left; }
 .sidebar-label svg { width: 12px; height: 12px; transition: transform .18s; }
 .sidebar-label svg.is-collapsed { transform: rotate(-90deg); }
 .project-item, .recent-item { min-height: 43px; border: 0; border-radius: 9px; padding: 6px 8px; gap: 8px; }
@@ -827,7 +827,7 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 .profile > svg { width: 14px; height: 14px; }
 .main-area { height: 100dvh; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
 .main-header { height: 56px; min-height: 56px; border: 0; padding: 0 18px; background: transparent; backdrop-filter: none; }
-.header-title-group strong { font-weight: 450; font-size: 13px; max-width: min(600px, 55vw); }
+.header-title-group .header-title { font-weight: 450; font-size: 13px; max-width: min(600px, 55vw); }
 .header-title-group small { max-width: min(600px, 55vw); overflow: hidden; font-family: inherit; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .header-actions { gap: 5px; }
 .header-workspace-name { display: flex; align-items: center; gap: 9px; color: var(--faint); font-size: 11px; }
@@ -1040,3 +1040,5 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 /* The composer frame shows focus for the whole input; the textarea's own
    outline would be clipped into a stray line along its bottom edge. */
 .composer-wrap .composer textarea:focus-visible { outline: none; }
+
+.header-title-group .header-title { margin: 0; line-height: 1.35; }

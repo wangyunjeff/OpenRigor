@@ -1287,7 +1287,7 @@ export function App(): ReactElement {
       <header className="main-header">
         <div className="header-left">
           <IconTooltip label="Toggle sidebar"><button type="button" className="icon-control main-sidebar-toggle" onClick={() => { if (window.innerWidth <= 900) setSidebarOpen(true); else { setSidebarCollapsed((previous) => !previous); window.localStorage.setItem("openrigor.sidebar-collapsed", String(!sidebarCollapsed)); } }} aria-label="Open navigation"><PanelLeftOpen aria-hidden="true" /></button></IconTooltip>
-          {conversation && !page ? <><span className="header-divider" /><div className="header-title-group"><strong title={conversationTitle}>{conversationTitle}</strong><small>{snapshot ? `${composerProject ? `${composerProject.name} · ` : ""}${modelLabel(snapshot.model)} · ${formatTime(snapshot.updatedAt)}` : "OpenRigor"}</small></div></> : null}
+          {conversation && !page ? <><span className="header-divider" /><div className="header-title-group"><h1 className="header-title" title={conversationTitle}>{conversationTitle}</h1><small>{snapshot ? `${composerProject ? `${composerProject.name} · ` : ""}${modelLabel(snapshot.model)} · ${formatTime(snapshot.updatedAt)}` : "OpenRigor"}</small></div></> : null}
           {!conversation && !page ? <div className="header-workspace-name"><span>Workspace</span><ChevronRight aria-hidden="true" /><strong>Personal</strong></div> : null}
         </div>
         <div className="header-actions"><PreviewLauncher />

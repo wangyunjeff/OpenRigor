@@ -25,7 +25,7 @@
 .ws-empty { min-height: 280px; padding: 42px 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); }
 .ws-empty-icon { display: grid; place-items: center; width: 58px; height: 58px; margin-bottom: 17px; border: 1px solid var(--line); border-radius: 18px; color: var(--faint); background: var(--fill-subtle); }
 .ws-empty-icon svg { width: 26px; height: 26px; stroke-width: 1.2; }
-.ws-empty h3 { margin: 0 0 9px; color: var(--text-soft); font-size: 18px; line-height: 1.4; font-weight: 500; letter-spacing: -.3px; }
+.ws-empty h2 { margin: 0 0 9px; color: var(--text-soft); font-size: 18px; line-height: 1.4; font-weight: 500; letter-spacing: -.3px; }
 .ws-empty p { max-width: 380px; margin: 0 0 15px; font-size: 13px; line-height: 1.7; }
 .ws-muted { color: var(--muted); font-size: 12px; line-height: 1.65; }
 .ws-lead { color: var(--muted); font-size: 14px; line-height: 1.7; margin: 0 0 25px; }
@@ -131,8 +131,8 @@
 .ws-skill-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
 .ws-skill-card { min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: var(--fill-subtle); transition: border-color .18s ease, background .18s ease; }
 .ws-skill-card:hover { border-color: var(--line-strong); background: var(--fill-soft); }
-.ws-skill-open { display: block; width: 100%; flex: 1; text-align: left; background: transparent; border: 0; padding: 21px 21px 14px; color: var(--text); }
-.ws-skill-icon { display: grid; place-items: center; width: 33px; height: 33px; border-radius: 9px; background: var(--fill-hover); color: #a6cbb9; margin-bottom: 15px; }
+.ws-skill-open { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; width: 100%; flex: 1; text-align: left; background: transparent; border: 0; padding: 21px 21px 14px; color: var(--text); }
+.ws-skill-icon { display: grid; flex: 0 0 auto; place-items: center; width: 33px; height: 33px; border-radius: 9px; background: var(--fill-hover); color: var(--accent); margin-bottom: 15px; }
 .ws-skill-icon svg { width: 18px; height: 18px; }
 .ws-tone-1 { color: #b8bfd7; }.ws-tone-2 { color: #c9bd98; }.ws-tone-3 { color: #b0c1cf; }.ws-tone-4 { color: #c7abbd; }
 .ws-skill-open h2 { font-size: 15px; font-weight: 550; line-height: 1.4; margin: 0 0 8px; letter-spacing: -.2px; }
@@ -171,7 +171,7 @@
 .ws-knowledge-toggle > svg:last-child { width: 13px; height: 13px; transition: transform .15s ease; }
 .ws-rotated { transform: rotate(90deg); }
 .ws-knowledge-content { border-top: 1px solid var(--line); padding: 16px; }
-.ws-knowledge-content pre { margin: 0 0 14px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.8 inherit; color: var(--text-soft); max-height: 320px; overflow: auto; }
+.ws-knowledge-content pre { margin: 0 0 14px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; line-height: 1.8; color: var(--text-soft); max-height: 320px; overflow: auto; }
 .ws-knowledge > .ws-form { margin-bottom: 24px; }
 .ws-files { margin-top: 12px; }
 .ws-files > .ws-section-heading { margin-top: 25px; }

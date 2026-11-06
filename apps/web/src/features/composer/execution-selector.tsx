@@ -47,10 +47,11 @@ export function ExecutionSelector({ runtimeModels = [], routing, model, effort, 
 
   return <DropdownMenu>
     <DropdownMenuTrigger asChild>
-      <button type="button" className="model-trigger" aria-label={`Model ${selectedModelLabel}, reasoning ${effortLabel(reasoning)}, mode ${modeLabel}`}>
+      <button type="button" className="model-trigger" title="Model, reasoning, and mode">
         <Sparkles aria-hidden="true" />
-        <span>{selectedModelLabel}</span><span>·</span><span>{effortLabel(reasoning)}</span>
+        <span>{selectedModelLabel}</span><span aria-hidden="true">·</span><span>{effortLabel(reasoning)}</span>
         {mode === "ultra" ? <span className="execution-trigger-mode">Ultra</span> : null}
+        <span className="sr-only">, model and reasoning; mode {modeLabel}</span>
         <ChevronDown aria-hidden="true" />
       </button>
     </DropdownMenuTrigger>

@@ -5,7 +5,8 @@ import {
   ChevronRight, CircleAlert, CircleHelp, Clock3, Code2, Compass, Copy, Cpu, File,
   FileText, FlaskConical, Folder, FolderOpen, Image, ImagePlus, Layers3, LoaderCircle, Monitor,
   Moon, Pencil, Pin, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Sun,
-  Terminal, Trash2, UserRound, UsersRound, WandSparkles, X, type LucideIcon
+  Terminal, Trash2, UserRound, UsersRound, WandSparkles, X, type LucideIcon,
+  Brain, Globe2, Palette, Presentation, Sheet
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
@@ -35,7 +36,7 @@ export interface WorkspacePanelProps {
 }
 
 const panelTitles: Record<WorkspacePanelId, string> = {
-  images: "Image Generation", skills: "Skill Market", projects: "Projects", agent: "Agent",
+  images: "Image Studio", skills: "Skill Market", projects: "Projects", agent: "Agent",
   search: "Search", settings: "Settings", workspace: "Personal workspace", research: "Research cases",
   guides: "Guides", handoff: "Continue your work"
 };
@@ -54,7 +55,7 @@ function ErrorNotice({ error, onRetry }: { error: string; onRetry?: () => void }
 }
 
 function Empty({ icon: Icon, title, children, action }: { icon: LucideIcon; title: string; children: ReactNode; action?: ReactNode }): ReactElement {
-  return <div className="ws-empty"><span className="ws-empty-icon"><Icon /></span><h3>{title}</h3><p>{children}</p>{action}</div>;
+  return <div className="ws-empty"><span className="ws-empty-icon"><Icon /></span><h2>{title}</h2><p>{children}</p>{action}</div>;
 }
 
 function SaveButton({ busy, children = "Save changes", ...props }: { busy: boolean; children?: ReactNode; type?: "submit" | "button"; disabled?: boolean; onClick?: () => void }): ReactElement {
@@ -82,7 +83,7 @@ export function WorkspacePanel(props: WorkspacePanelProps): ReactElement | null 
   if (!panel) return null;
   const Icon = panelIcons[panel];
   const content = <div className={`ws-panel ws-panel-${panel}${presentation === "dialog" ? " ws-panel-modal" : ""}`}>
-    <header className="ws-page-header"><div>{panel === "research" || panel === "guides" || panel === "handoff" ? <button type="button" className="ws-text-button" onClick={onClose}><ArrowLeft />Back</button> : <Icon />}<h1>{panelTitles[panel]}</h1>{panel === "images" && <span className="ws-badge">Studio</span>}</div><button type="button" className="ws-icon-button" onClick={onClose} aria-label="Back to chat" title="Back to chat"><X /></button></header>
+    <header className="ws-page-header"><div>{panel === "research" || panel === "guides" || panel === "handoff" ? <button type="button" className="ws-text-button" onClick={onClose}><ArrowLeft />Back</button> : <Icon />}<h1>{panelTitles[panel]}</h1></div><button type="button" className="ws-icon-button" onClick={onClose} aria-label="Back to chat" title="Back to chat"><X /></button></header>
     <div className={`ws-page-body${panel === "images" ? " ws-image-body" : ""}`}>
       {error && <ErrorNotice error={error} onRetry={refresh} />}
       {panel === "research" ? <ResearchPanel onCompose={props.onCompose} /> : panel === "guides" ? <GuidesPanel onCompose={props.onCompose} /> : loading && !overview ? <Busy /> : overview ? <>
@@ -198,18 +199,37 @@ function SkillsPanel({ skills, onChanged }: { skills: WorkspaceSkill[]; onChange
   }
 
   return <div className="ws-market"><p className="ws-lead">Add reusable expertise to your agent. Installed skills can be selected with <kbd>/</kbd> in any task.</p><div className="ws-market-toolbar"><label className="ws-search-field"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search skills" aria-label="Search skills" /></label><Button className="ws-button ws-button-primary" onClick={() => setAdding(true)}><Plus />Add skill</Button></div><div className="ws-category-tabs" role="tablist" aria-label="Skill categories">{categories.map((item) => <button type="button" role="tab" aria-selected={category === item} className={category === item ? "active" : ""} key={item} onClick={() => setCategory(item)}>{item}{item === "Installed" && <span>{skills.filter((skill) => skill.installed).length}</span>}</button>)}</div>{error && <ErrorNotice error={error} />}
-    {filtered.length ? <div className="ws-skill-grid">{filtered.map((skill, index) => { const Icon = skillIcon(skill.category, index); return <article className="ws-skill-card" key={skill.id}><button type="button" className="ws-skill-open" onClick={() => setSelected(skill)}><span className={`ws-skill-icon ws-tone-${index % 5}`}><Icon /></span><h2>{skill.name ?? skill.label}</h2><p>{skill.description}</p></button><footer><span><span className="ws-mini-logo">O</span>{skill.category === "Custom" ? "Your workspace" : "OpenRigor"}</span><button type="button" className={`ws-install-button${skill.installed ? " installed" : ""}`} disabled={pending === skill.id} onClick={() => { void toggleSkill(skill); }}>{pending === skill.id ? <LoaderCircle className="ws-spin" /> : skill.installed ? <Check /> : <Plus />}{skill.installed ? "Installed" : "Install"}</button></footer></article>; })}</div> : <Empty icon={Search} title="No matching skills">Try another search or add a skill with your own instructions.</Empty>}
+    {filtered.length ? <div className="ws-skill-grid">{filtered.map((skill) => { const Icon = skillIcon(skill.icon, skill.category); return <article className="ws-skill-card" key={skill.id}><button type="button" className="ws-skill-open" onClick={() => setSelected(skill)}><span className="ws-skill-icon"><Icon /></span><h2>{skill.name ?? skill.label}</h2><p>{skill.description}</p></button><footer><span><span className="ws-mini-logo">O</span>{skill.category === "Custom" ? "Your workspace" : "OpenRigor"}</span><button type="button" className={`ws-install-button${skill.installed ? " installed" : ""}`} disabled={pending === skill.id} onClick={() => { void toggleSkill(skill); }}>{pending === skill.id ? <LoaderCircle className="ws-spin" /> : skill.installed ? <Check /> : <Plus />}{skill.installed ? "Installed" : "Install"}</button></footer></article>; })}</div> : <Empty icon={Search} title="No matching skills">Try another search or add a skill with your own instructions.</Empty>}
     <Dialog open={adding} onOpenChange={setAdding}><DialogContent className="ws-form-dialog"><DialogTitle>Add a skill</DialogTitle><DialogDescription>Create reusable instructions for your agent.</DialogDescription><form className="ws-form" onSubmit={(event) => { void addSkill(event); }}><label>Name<input required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Evidence review" /></label><label>Description<input required maxLength={500} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What does this skill help with?" /></label><label>Instructions<textarea required rows={8} maxLength={16000} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Describe the workflow, constraints, and expected output…" /></label>{error && <ErrorNotice error={error} />}<div className="ws-form-actions"><Button type="button" className="ws-button" onClick={() => setAdding(false)}>Cancel</Button><SaveButton busy={pending === "new"}>Create skill</SaveButton></div></form></DialogContent></Dialog>
     <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) setSelected(null); }}><DialogContent className="ws-form-dialog"><DialogTitle>{selected?.name ?? selected?.label}</DialogTitle><DialogDescription>{selected?.description}</DialogDescription>{selected && <><span className="ws-badge">{selected.category || "General"}</span><div className="ws-instructions-preview">{selected.instructions || "Install this skill to make its workflow available in your task composer."}</div><div className="ws-form-actions"><button type="button" className="ws-button ws-button-primary" disabled={pending === selected.id} onClick={() => { void toggleSkill(selected); }}>{pending === selected.id ? <LoaderCircle className="ws-spin" /> : selected.installed ? <Check /> : <Plus />}{selected.installed ? "Remove from workspace" : "Install skill"}</button></div></>}</DialogContent></Dialog>
   </div>;
 }
 
-function skillIcon(category: string | undefined, index: number): LucideIcon {
+const skillIcons: Record<string, LucideIcon> = {
+  globe: Globe2,
+  book: BookOpen,
+  brain: Brain,
+  image: Image,
+  palette: Palette,
+  file: FileText,
+  presentation: Presentation,
+  table: Sheet,
+  terminal: Terminal,
+  sparkles: WandSparkles,
+  code: Code2
+};
+
+/** Use the icon the skill declares; fall back by category so every card stays meaningful. */
+function skillIcon(icon: string | undefined, category: string | undefined): LucideIcon {
+  const declared = icon ? skillIcons[icon] : undefined;
+  if (declared) return declared;
   const text = category?.toLowerCase() ?? "";
   if (text.includes("research")) return FlaskConical;
-  if (text.includes("code") || text.includes("engineer")) return Code2;
+  if (text.includes("code") || text.includes("develop") || text.includes("engineer")) return Code2;
   if (text.includes("document")) return FileText;
-  return [WandSparkles, BookOpen, Compass, Terminal, Layers3][index % 5] ?? WandSparkles;
+  if (text.includes("creative")) return Palette;
+  if (text.includes("tool")) return Layers3;
+  return WandSparkles;
 }
 
 function ProjectsPanel({ overview, onChanged, onSelectProject, onOpenRun, createProject = false }: { overview: WorkspaceOverview; onChanged: () => void; onSelectProject: WorkspacePanelProps["onSelectProject"]; onOpenRun: WorkspacePanelProps["onOpenRun"]; createProject?: boolean }): ReactElement {
@@ -535,7 +555,7 @@ const guideSections = [
   { id: "sources", title: "Work with sources", icon: BookOpen, body: "Use @ in the composer to select workspace context. Add longer notes in a project's Knowledge tab. Ask for primary sources, exact citations, and explicit uncertainty when you need evidence you can verify.", prompt: "Inspect the project materials and produce an evidence-backed summary. Link each important claim to a primary source or an exact workspace file, and label anything that remains uncertain." },
   { id: "models", title: "Choose model and reasoning", icon: Cpu, body: "Sol handles demanding synthesis; Terra is a balanced general model; Luna suits focused work. Reasoning effort controls the depth of a single model. Ultra requests multi-agent coordination through the local Codex runtime. Availability follows your configured provider.", prompt: "Assess the complexity of my task, recommend an appropriate model and reasoning budget, and explain which parts need deep reasoning versus straightforward execution." },
   { id: "skills", title: "Give your agent reusable skills", icon: WandSparkles, body: "Install a workflow from the Skill Market or add one with your own instructions. Select installed skills with / when composing a task. A skill supplies guidance for the agent; it does not install arbitrary executables on your computer.", prompt: "Help me write a reusable skill for a workflow I repeat. Ask about the trigger, inputs, process, constraints, expected deliverables, and validation steps, then draft concise instructions." },
-  { id: "images", title: "Generate original images", icon: Image, body: "Open Image Generation, describe the visual you need, choose a model and resolution, and generate. Originals are saved locally. The provider key is configured on the server and stays out of browser requests.", prompt: "Help me write a precise image prompt. Ask me about the subject, purpose, composition, style, lighting, colors, dimensions, and any text that needs to appear." },
+  { id: "images", title: "Generate original images", icon: Image, body: "Open Image Studio, describe the visual you need, choose a model and resolution, and generate. Originals are saved locally. The provider key is configured on the server and stays out of browser requests.", prompt: "Help me write a precise image prompt. Ask me about the subject, purpose, composition, style, lighting, colors, dimensions, and any text that needs to appear." },
   { id: "history", title: "Resume and inspect your work", icon: Clock3, body: "Use Search or the sidebar task list to reopen a conversation. Runs replay their saved events in order. If the local execution process was interrupted, its status explains what happened so you can decide how to continue.", prompt: "Inspect the current workspace and summarize completed work, unresolved questions, and the next concrete step. Verify the actual files and state before proposing changes." }
 ];
 
