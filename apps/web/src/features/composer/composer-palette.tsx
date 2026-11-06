@@ -58,8 +58,8 @@ export function ComposerPalette({
 
   if (!open || !mode) return null;
   const HeaderIcon = mode === "skill" ? Layers3 : AtSign;
-  return <div id={`composer-palette-${mode}`} ref={paletteRef} className="composer-command-menu" role="listbox" aria-label={mode === "skill" ? "选择技能" : "选择上下文"}>
-    <div className="composer-command-header"><span><HeaderIcon aria-hidden="true" />{mode === "skill" ? "技能" : "上下文"}</span><kbd>{mode === "skill" ? "/" : "@"}</kbd></div>
+  return <div id={`composer-palette-${mode}`} ref={paletteRef} className="composer-command-menu" role="listbox" aria-label={mode === "skill" ? "Choose a skill" : "Choose context"}>
+    <div className="composer-command-header"><span><HeaderIcon aria-hidden="true" />{mode === "skill" ? "Skills" : "Context"}</span><kbd>{mode === "skill" ? "/" : "@"}</kbd></div>
     <div className="composer-command-list">
       {items.length ? items.map((item, index) => {
         const Icon = item.icon;
@@ -71,7 +71,7 @@ export function ComposerPalette({
           type="button"
           role="option"
           aria-selected={highlighted}
-          aria-label={`${item.label}${configured ? "，已添加" : ""}`}
+          aria-label={`${item.label}${configured ? ", added" : ""}`}
           data-configured={configured ? "true" : "false"}
           className={highlighted ? "composer-command-item highlighted" : "composer-command-item"}
           key={item.id}
@@ -82,8 +82,8 @@ export function ComposerPalette({
           <span className="composer-command-copy"><strong>{item.label}</strong><small>{item.description}</small>{item.path ? <code>{item.path}</code> : null}</span>
           <span className={configured ? "composer-command-check selected" : "composer-command-check"}>{configured ? <Check aria-hidden="true" /> : <kbd>{index + 1}</kbd>}</span>
         </button>;
-      }) : <div className="composer-command-empty" role="status">没有匹配的选项</div>}
+      }) : <div className="composer-command-empty" role="status">No matching options</div>}
     </div>
-    <div className="composer-command-footer"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>Enter</kbd>添加</span></div>
+    <div className="composer-command-footer"><span><kbd>↑</kbd><kbd>↓</kbd>Navigate</span><span><kbd>Enter</kbd>Add</span></div>
   </div>;
 }

@@ -3,27 +3,27 @@ import { useGSAP } from "@gsap/react";
 import type { RunSnapshot, UsageSummary } from "@openrigor/protocol";
 import { gsap } from "gsap";
 import {
-  Activity,
+  Bot,
   BrainCircuit,
   Check,
-  CheckCircle2,
+  ChevronDown,
+  Circle,
   CircleAlert,
-  CircleDashed,
+  CircleSlash,
+  Clock3,
   Copy,
   Download,
-  FileCode2,
+  FilePen,
+  FileText,
   GitCompare,
-  TriangleAlert,
-  XCircle
+  ImageIcon,
+  ListChecks,
+  MousePointerClick,
+  Plug,
+  Search,
+  SquareTerminal,
+  Wrench
 } from "lucide-react";
-import { Agent, AgentContent, AgentHeader } from "../../components/ai-elements/agent";
-import {
-  Artifact,
-  ArtifactContent,
-  ArtifactDescription,
-  ArtifactHeader,
-  ArtifactTitle
-} from "../../components/ai-elements/artifact";
 import { CodeBlock } from "../../components/ai-elements/code-block";
 import {
   Message,
@@ -44,60 +44,104 @@ import {
   ToolOutput
 } from "../../components/ai-elements/tool";
 import { Terminal } from "../../components/ai-elements/terminal";
-import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../components/ui/collapsible";
 import {
   projectRunEvents,
   segmentRunTimeline,
   type AssistantMessageProjection,
   type ConversationRunView,
+  type PlanProjection,
   type ReasoningProjection,
   type RunActivity,
+  type RunTimelineSegment,
   type SourceProjection,
   type ToolProjection
 } from "../../conversation";
 import {
   executionOpenTransition,
+  formatElapsed,
   formatToolDuration,
   isActivelyWorkingStatus,
+  processSummary,
   toolElapsedMs,
-  executionSummary
+  type RunActivityPresentation
 } from "../../run-presentation";
 import { modelLabel } from "../../workspace-preferences";
-import { annotateSourceLinks, artifactLanguage, isTerminalTool, linkArtifactMarkdown, resolveArtifactUrl, toolPhaseToAiState } from "./ai-elements-adapter";
+import { usePreview } from "../preview/preview-context";
+import {
+  annotateSourceLinks,
+  artifactBasename,
+  artifactLanguage,
+  isTerminalTool,
+  linkArtifactMarkdown,
+  resolveArtifactUrl,
+  summarizePlan,
+  toolPhaseToAiState
+} from "./ai-elements-adapter";
 import { RunRequestPanel } from "./request-panel";
-import { ResearchDeliverables, ResearchPlan, ResearchSources } from "./research-results";
+import { ResearchDeliverables, ResearchSources } from "./research-results";
 import { workspaceApiBase } from "../workspace/api";
-import { executionShouldOpen, messageReadingRole, toolFailureSummary, toolReadingTitle, toolShouldOpen } from "./run-reading";
-import "./run-reading.css";
+import {
+  messageReadingRole,
+  processShouldOpen,
+  responseTailIndex,
+  toolFailureSummary,
+  toolKind,
+  toolReadingTitle,
+  toolShouldOpen,
+  type ToolKind
+} from "./run-reading";
+import "./run-turn.css";
 import { ActivityGlyph, RunActivityIndicator, useRunActivity } from "./run-activity";
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed";
 
+type ToolOutcome = NonNullable<ToolProjection["event"]["tool"]["outcome"]>;
+type DownloadableFile = { name: string; path?: string; downloadUrl?: string };
+
+const toolIcons: Record<ToolKind, typeof Wrench> = {
+  command: SquareTerminal,
+  search: Search,
+  file: FilePen,
+  browser: MousePointerClick,
+  subagent: Bot,
+  image: ImageIcon,
+  plan: ListChecks,
+  wait: Clock3,
+  mcp: Plug,
+  tool: Wrench
+};
+
 function formatTime(value: string): string {
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function compactId(value: string): string {
-  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-5)}` : value;
-}
-
-function statusLabel(status: RunSnapshot["status"]): string {
-  const labels: Record<RunSnapshot["status"], string> = {
-    queued: "排队中",
-    running: "执行中",
-    waiting_tool: "调用工具",
-    waiting_user: "等待确认",
-    cancelling: "正在停止",
-    completed: "已完成",
-    failed: "失败",
-    cancelled: "已停止"
-  };
-  return labels[status];
+  return new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function isTerminalStatus(status: RunSnapshot["status"]): boolean {
   return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function subagentStatusLabel(status: RunSnapshot["status"]): string {
+  const labels: Record<RunSnapshot["status"], string> = {
+    queued: "Queued",
+    running: "Working",
+    waiting_tool: "Using a tool",
+    waiting_user: "Needs input",
+    cancelling: "Stopping",
+    completed: "Done",
+    failed: "Failed",
+    cancelled: "Stopped"
+  };
+  return labels[status];
+}
+
+/** Changed paths named by a unified diff; the diff part id only identifies the turn. */
+function diffPaths(diff: string): string[] {
+  const paths = new Set<string>();
+  for (const match of diff.matchAll(/^\+\+\+ (?:b\/)?(.+)$/gm)) {
+    const path = match[1]?.trim();
+    if (path && path !== "/dev/null") paths.add(path);
+  }
+  return [...paths];
 }
 
 function AnimatedStep({ children, className = "" }: { children: ReactElement; className?: string }): ReactElement {
@@ -107,14 +151,14 @@ function AnimatedStep({ children, className = "" }: { children: ReactElement; cl
     if (!root) return;
     const media = gsap.matchMedia();
     media.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.fromTo(root, { autoAlpha: 0, y: 6, scale: 0.995 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.28, ease: "power2.out", clearProps: "transform,opacity,visibility" });
+      gsap.fromTo(root, { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.24, ease: "power2.out", clearProps: "transform,opacity,visibility" });
     }, root);
     return () => media.revert();
   }, { scope: stepRef });
-  return <div ref={stepRef} className={`ai-run-step ${className}`}>{children}</div>;
+  return <div ref={stepRef} className={`process-step ${className}`}>{children}</div>;
 }
 
-function toolOutcome(projection: ToolProjection): NonNullable<ToolProjection["event"]["tool"]["outcome"]> | undefined {
+function toolOutcome(projection: ToolProjection): ToolOutcome | undefined {
   const explicit = projection.event.tool.outcome;
   if (explicit) return explicit;
   if (projection.event.tool.phase === "failed") return "error";
@@ -122,12 +166,13 @@ function toolOutcome(projection: ToolProjection): NonNullable<ToolProjection["ev
   return undefined;
 }
 
-function outcomeCopy(outcome: NonNullable<ReturnType<typeof toolOutcome>>): { label: string; Icon: typeof CheckCircle2; className: string } {
-  if (outcome === "no-result") return { label: "未找到匹配", Icon: CircleDashed, className: "no-result" };
-  if (outcome === "partial") return { label: "部分完成 · 有警告", Icon: TriangleAlert, className: "partial" };
-  if (outcome === "declined") return { label: "已拒绝", Icon: XCircle, className: "declined" };
-  if (outcome === "error") return { label: "执行失败", Icon: CircleAlert, className: "error" };
-  return { label: "已完成", Icon: CheckCircle2, className: "success" };
+function outcomeLabel(outcome: ToolOutcome | undefined): string | undefined {
+  if (outcome === "no-result") return "No matches";
+  if (outcome === "partial") return "Finished with warnings";
+  if (outcome === "declined") return "Declined";
+  if (outcome === "error") return "Failed";
+  if (outcome === "success") return "Completed";
+  return undefined;
 }
 
 function ReasoningStep({ projection, isStreaming }: { projection: ReasoningProjection; isStreaming: boolean }): ReactElement {
@@ -141,10 +186,14 @@ function ReasoningStep({ projection, isStreaming }: { projection: ReasoningProje
     setOpen(isStreaming);
   }, [isStreaming]);
 
-  return <AnimatedStep className="assistant-reasoning-step">
+  return <AnimatedStep className="is-reasoning">
     <Reasoning className="openrigor-reasoning" isStreaming={isStreaming} open={open} onOpenChange={setOpen} {...(duration === undefined ? {} : { duration })}>
-      <ReasoningTrigger getThinkingMessage={(streaming, seconds) => <span>{streaming ? "正在深度思考" : seconds ? `思考 · ${seconds}s` : "思考过程"}</span>}><BrainCircuit aria-hidden="true" /><span>{isStreaming ? "正在深度思考" : duration ? `思考 · ${duration}s` : "思考过程"}</span></ReasoningTrigger>
-      <ReasoningContent>{projection.text}</ReasoningContent>
+      <ReasoningTrigger className="process-row-trigger">
+        <span className="step-icon" aria-hidden="true"><BrainCircuit /></span>
+        <span className={isStreaming ? "process-row-title text-shimmer" : "process-row-title"}>{isStreaming ? "Thinking" : duration ? `Thought for ${duration}s` : "Reasoning"}</span>
+        <ChevronDown className="process-row-chevron" aria-hidden="true" />
+      </ReasoningTrigger>
+      <ReasoningContent className="process-reasoning-text">{projection.text}</ReasoningContent>
     </Reasoning>
   </AnimatedStep>;
 }
@@ -152,222 +201,312 @@ function ReasoningStep({ projection, isStreaming }: { projection: ReasoningProje
 function ToolDiagnostics({ tool, output }: { tool: ToolProjection["event"]["tool"]; output: string | undefined }): ReactElement | null {
   if (!output && !tool.inputSummary && !tool.diagnostic) return null;
   return <details className="tool-diagnostics">
-    <summary><span className="tool-diagnostics-chevron" aria-hidden="true">›</span><span>诊断详情</span><small>原始返回与调用参数</small></summary>
-    <div className="tool-diagnostics-body" tabIndex={0} role="region" aria-label="原始工具诊断">
-      {tool.diagnostic ? <section><h4>运行时诊断</h4><pre>{tool.diagnostic}</pre></section> : null}
-      {output ? <section><h4>工具原始返回</h4><pre>{output}</pre></section> : null}
-      {tool.inputSummary ? <section><h4>调用参数</h4><pre>{tool.inputSummary}</pre></section> : null}
+    <summary><span className="tool-diagnostics-chevron" aria-hidden="true">›</span><span>Details</span><small>Raw output and arguments</small></summary>
+    <div className="tool-diagnostics-body" tabIndex={0} role="region" aria-label="Raw tool diagnostics">
+      {tool.diagnostic ? <section><h4>Runtime diagnostic</h4><pre>{tool.diagnostic}</pre></section> : null}
+      {output ? <section><h4>Raw output</h4><pre>{output}</pre></section> : null}
+      {tool.inputSummary ? <section><h4>Arguments</h4><pre>{tool.inputSummary}</pre></section> : null}
     </div>
   </details>;
 }
 
-function ToolStep({ projection, output, nowMs, active, attention }: { projection: ToolProjection; output: string | undefined; nowMs: number; active: boolean; attention: boolean }): ReactElement {
-  const phase = projection.event.tool.phase;
+function ToolStep({ projection, output, nowMs, live, attention }: { projection: ToolProjection; output: string | undefined; nowMs: number; live: boolean; attention: boolean }): ReactElement {
+  const tool = projection.event.tool;
+  const phase = tool.phase;
   const outcome = toolOutcome(projection);
   const hasFailure = outcome === "error" || outcome === "declined";
-  const pendingTool = phase === "requested" || phase === "running";
-  const liveTool = active && pendingTool;
-  const duration = projection.event.tool.durationMs !== undefined
-    ? formatToolDuration(projection.event.tool.durationMs)
+  const pending = phase === "requested" || phase === "running";
+  const liveTool = live && pending;
+  const rawDuration = tool.durationMs !== undefined
+    ? formatToolDuration(tool.durationMs)
     : phase === "requested" && !liveTool
     ? null
-    : formatToolDuration(toolElapsedMs(projection.firstAt, projection.lastAt, liveTool, nowMs));
-  const autoOpen = toolShouldOpen(pendingTool, active, hasFailure, attention);
+    : liveTool
+    ? formatElapsed(toolElapsedMs(projection.firstAt, projection.lastAt, true, nowMs))
+    : formatToolDuration(toolElapsedMs(projection.firstAt, projection.lastAt, false, nowMs));
+  // A zero-length record (for example a file change reported once) has no meaningful duration.
+  const duration = rawDuration === "0ms" ? null : rawDuration;
+  const autoOpen = toolShouldOpen(pending, live, hasFailure, attention);
   const [open, setOpen] = useState(autoOpen);
 
   useEffect(() => {
     setOpen(autoOpen);
   }, [autoOpen]);
 
-  const copy = outcome ? outcomeCopy(outcome) : undefined;
-  const OutcomeIcon = copy?.Icon;
+  const kind = toolKind(tool.name);
+  const Icon = toolIcons[kind];
+  const title = toolReadingTitle(tool);
+  const state = liveTool ? "input-available" : pending ? "input-streaming" : toolPhaseToAiState(phase, tool.outcome);
+  const statusText = liveTool ? "Running" : pending ? "Not finished" : outcomeLabel(outcome);
+  const note = outcome === "partial" || outcome === "no-result"
+    ? tool.diagnostic ?? (outcome === "no-result" ? "No matches found" : "Finished with warnings")
+    : undefined;
+  const input = !hasFailure && tool.inputSummary && tool.inputSummary.trim() !== title ? tool.inputSummary.trim() : undefined;
+  const hasDetails = Boolean(output || note || hasFailure || input);
 
-  return <AnimatedStep>
-    <Tool className={liveTool ? "openrigor-tool is-live" : "openrigor-tool"} open={open} onOpenChange={setOpen} data-outcome={outcome}>
+  return <AnimatedStep className={`is-tool kind-${kind}`}>
+    <Tool className={liveTool ? "openrigor-tool is-live" : "openrigor-tool"} open={hasDetails && open} onOpenChange={setOpen} data-outcome={outcome} data-kind={kind}>
       <ToolHeader
+        className="process-row-trigger"
         type="dynamic-tool"
-        toolName={projection.event.tool.name}
-        title={toolReadingTitle(projection.event.tool)}
-        state={toolPhaseToAiState(phase, projection.event.tool.outcome)}
-        {...(copy === undefined ? {} : { statusText: copy.label })}
+        toolName={tool.name}
+        title={title}
+        icon={<span className="step-icon"><Icon /></span>}
+        state={state}
+        statusDisplay="icon"
+        expandable={hasDetails}
+        {...(statusText === undefined ? {} : { statusText })}
         {...(duration === null ? {} : { durationText: duration })}
       />
-      <ToolContent>
-        <div className="openrigor-tool-meta"><span>{projection.event.tool.name}</span></div>
-        {copy && OutcomeIcon ? <div className={`openrigor-tool-outcome outcome-${copy.className}`}><OutcomeIcon aria-hidden="true" /><strong>{copy.label}</strong>{projection.event.tool.exitCode !== undefined ? <code>exit {projection.event.tool.exitCode}</code> : null}</div> : null}
+      {hasDetails ? <ToolContent className="openrigor-tool-content">
+        {note ? <p className="tool-note"><CircleAlert aria-hidden="true" /><span>{note}</span>{tool.exitCode !== undefined ? <code>exit {tool.exitCode}</code> : null}</p> : null}
         {hasFailure
-          ? <div className="tool-failure-reading"><p className="tool-failure-reason"><CircleAlert aria-hidden="true" /><span>{toolFailureSummary(output, projection.event.tool.diagnostic, outcome === "declined")}</span></p><ToolDiagnostics tool={projection.event.tool} output={output} /></div>
-          : output && isTerminalTool(projection.event.tool.name)
-          ? <Terminal className="openrigor-terminal" output={output} isStreaming={liveTool} />
-          : <ToolOutput
-            className="openrigor-tool-output"
-            output={output}
-            errorText={undefined}
-          />}
-      </ToolContent>
+          ? <div className="tool-failure-reading"><p className="tool-failure-reason"><CircleAlert aria-hidden="true" /><span>{toolFailureSummary(output, tool.diagnostic, outcome === "declined")}</span>{tool.exitCode !== undefined ? <code>exit {tool.exitCode}</code> : null}</p><ToolDiagnostics tool={tool} output={output} /></div>
+          : <>
+            {input ? <pre className="tool-input">{input}</pre> : null}
+            {output && isTerminalTool(tool.name)
+              ? <Terminal className="openrigor-terminal" output={output} isStreaming={liveTool} />
+              : output ? <ToolOutput className="openrigor-tool-output" output={output} errorText={undefined} /> : null}
+          </>}
+      </ToolContent> : null}
     </Tool>
   </AnimatedStep>;
 }
 
-function ActivityError({ event }: { event: Extract<RunActivity, { kind: "error" }>["event"] }): ReactElement {
-  const recoverable = event.retryable;
-  const title = recoverable ? "Codex 运行提示" : event.code === "CODEX_ERROR" ? "Codex 执行失败" : "运行时错误";
-  return <AnimatedStep className="activity-error-step"><Alert className={recoverable ? "run-inline-warning" : "run-inline-error"} variant={recoverable ? "default" : "destructive"}>
-    <CircleAlert aria-hidden="true" /><AlertTitle>{title}</AlertTitle>
-    <AlertDescription>{event.message}{event.retryable ? " · 可以重试" : ""}</AlertDescription>
-  </Alert></AnimatedStep>;
-}
-
-function ActivityArtifact({ activity }: { activity: Extract<RunActivity, { kind: "file" | "diff" }> }): ReactElement {
-  if (activity.kind === "file") {
-    const event = activity.event;
-    const downloadUrl = resolveArtifactUrl(event.file.downloadUrl, workspaceApiBase);
-    return <AnimatedStep><Artifact className="openrigor-artifact compact-artifact"><ArtifactHeader><div><ArtifactTitle>生成文件</ArtifactTitle><ArtifactDescription>{event.file.name}</ArtifactDescription></div><div className="artifact-file-actions"><span className="artifact-revision"><FileCode2 aria-hidden="true" />r{event.file.revision}</span>{downloadUrl ? <a href={downloadUrl} download={event.file.name} target="_blank" rel="noreferrer" aria-label={`下载 ${event.file.name}`} title={`下载 ${event.file.name}`}><Download aria-hidden="true" /></a> : null}</div></ArtifactHeader></Artifact></AnimatedStep>;
-  }
-  const event = activity.event;
-  const filename = event.part.partId.replace("diff:", "");
-  return <AnimatedStep><Artifact className="openrigor-artifact"><ArtifactHeader><div><ArtifactTitle>文件变更</ArtifactTitle><ArtifactDescription>{filename}</ArtifactDescription></div><GitCompare aria-hidden="true" /></ArtifactHeader><ArtifactContent><CodeBlock code={event.part.text} language={artifactLanguage(event.part.partId)} /></ArtifactContent></Artifact></AnimatedStep>;
-}
-
-function ActivitySubagent({ event, snapshot }: { event: Extract<RunActivity, { kind: "subagent" }>["projection"]["event"]; snapshot: RunSnapshot }): ReactElement {
-  return <AnimatedStep><Agent className="openrigor-agent"><AgentHeader name={event.subagent.label} model={snapshot.routing === "tokenresearch" ? "Luna Max" : "Subagent"} /><AgentContent><span className={`subagent-status status-${event.subagent.status}`}><span />{statusLabel(event.subagent.status)}</span><code>{compactId(event.subagent.subagentRunId)}</code></AgentContent></Agent></AnimatedStep>;
-}
-
-function AssistantMessageStep({
-  projection,
-  isStreaming,
-  readingRole,
-  copied,
-  files,
-  sources,
-  onCopy
-}: {
-  projection: AssistantMessageProjection;
-  isStreaming: boolean;
-  readingRole: ReturnType<typeof messageReadingRole>;
-  copied: boolean;
-  files: Array<{ name: string; path?: string; downloadUrl?: string }>;
-  sources: SourceProjection[];
-  onCopy: (answer: string) => void;
-}): ReactElement {
-  const isFinal = readingRole === "answer";
-  const label = isFinal ? "回答" : readingRole === "partial" ? "运行结束前的回复" : "进展更新";
-  return <AnimatedStep className={`assistant-message-step reading-message is-${readingRole}`}>
-    <MessageContent className="assistant-response-text">
-      <div className="assistant-reading-label">{label}</div>
-      <MessageResponse isAnimating={isStreaming}>{annotateSourceLinks(linkArtifactMarkdown(projection.text, files, workspaceApiBase), sources)}</MessageResponse>
-      {isFinal ? <MessageActions className="answer-actions"><MessageAction size="sm" tooltip="复制回答" label="复制回答" aria-label={copied ? "已复制" : "复制回答"} onClick={() => onCopy(projection.text)}><Copy aria-hidden="true" /><span>{copied ? "已复制" : "复制回答"}</span></MessageAction></MessageActions> : null}
-    </MessageContent>
+function ErrorStep({ event }: { event: Extract<RunActivity, { kind: "error" }>["event"] }): ReactElement {
+  const title = event.retryable ? "Codex reported a recoverable problem" : event.code === "CODEX_ERROR" ? "Codex failed" : "Runtime error";
+  return <AnimatedStep className={event.retryable ? "is-error is-warning" : "is-error"}>
+    <div className="process-error" role="alert">
+      <span className="step-icon" aria-hidden="true"><CircleAlert /></span>
+      <div><strong>{title}</strong><span>{event.message}{event.retryable ? " The runtime may retry." : ""}</span></div>
+    </div>
   </AnimatedStep>;
 }
 
-function ExecutionGroup({
-  id,
-  activities,
+function FileStep({ event }: { event: Extract<RunActivity, { kind: "file" }>["event"] }): ReactElement {
+  const preview = usePreview();
+  const file = event.file;
+  const name = artifactBasename(file.name);
+  const downloadUrl = resolveArtifactUrl(file.downloadUrl, workspaceApiBase);
+  return <AnimatedStep className="is-file">
+    <div className="process-file">
+      <span className="step-icon" aria-hidden="true"><FileText /></span>
+      <button type="button" className="process-file-open" onClick={() => preview?.openArtifact(file)} disabled={!preview} title={`Preview ${name}`}>
+        <span>{file.revision > 1 ? "Updated" : "Created"}</span><strong>{name}</strong>
+      </button>
+      <span className="process-file-revision">r{file.revision}</span>
+      {downloadUrl ? <a href={downloadUrl} download={name} target="_blank" rel="noreferrer" aria-label={`Download ${name}`} title={`Download ${name}`}><Download aria-hidden="true" /></a> : null}
+    </div>
+  </AnimatedStep>;
+}
+
+function DiffStep({ event }: { event: Extract<RunActivity, { kind: "diff" }>["event"] }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const paths = diffPaths(event.part.text);
+  const title = paths.length === 1 ? `Edited ${paths[0]}` : paths.length > 1 ? `Edited ${paths.length} files` : "Code changes";
+  return <AnimatedStep className="is-tool kind-diff">
+    <Tool className="openrigor-tool" open={open} onOpenChange={setOpen} data-kind="diff">
+      <ToolHeader className="process-row-trigger" type="dynamic-tool" toolName="diff" title={title} icon={<span className="step-icon"><GitCompare /></span>} state="output-available" statusDisplay="icon" statusText="Recorded" />
+      <ToolContent className="openrigor-tool-content"><CodeBlock code={event.part.text} language={artifactLanguage(event.part.partId)} /></ToolContent>
+    </Tool>
+  </AnimatedStep>;
+}
+
+function SubagentStep({ event, snapshot }: { event: Extract<RunActivity, { kind: "subagent" }>["projection"]["event"]; snapshot: RunSnapshot }): ReactElement {
+  return <AnimatedStep className="is-subagent">
+    <div className="process-subagent" data-status={event.subagent.status}>
+      <span className="step-icon" aria-hidden="true"><Bot /></span>
+      <strong>{event.subagent.label}</strong>
+      <small>{snapshot.routing === "tokenresearch" ? "Luna Max" : "Subagent"}</small>
+      <span className="process-subagent-status"><span aria-hidden="true" />{subagentStatusLabel(event.subagent.status)}</span>
+    </div>
+  </AnimatedStep>;
+}
+
+function CommentaryStep({ projection, files, sources, isStreaming }: { projection: AssistantMessageProjection; files: DownloadableFile[]; sources: SourceProjection[]; isStreaming: boolean }): ReactElement {
+  return <AnimatedStep className="is-commentary">
+    <div className="process-commentary">
+      <span className="step-icon" aria-hidden="true"><span className="step-dot" /></span>
+      <MessageResponse className="process-commentary-text" isAnimating={isStreaming}>{annotateSourceLinks(linkArtifactMarkdown(projection.text, files, workspaceApiBase), sources)}</MessageResponse>
+    </div>
+  </AnimatedStep>;
+}
+
+function PlanChecklist({ plan, active }: { plan: PlanProjection; active: boolean }): ReactElement | null {
+  const progress = summarizePlan(plan.steps);
+  if (!progress.total) return null;
+  return <div className="process-plan" aria-label={`Plan, ${progress.completed} of ${progress.total} steps complete`}>
+    <div className="process-plan-heading"><ListChecks aria-hidden="true" /><span>Plan</span><small>{progress.completed}/{progress.total}</small></div>
+    <ol>{plan.steps.map((item, index) => <li key={`${index}:${item.step}`} data-state={item.status}>
+      <span className="process-plan-mark" aria-hidden="true">{item.status === "completed" ? <Check /> : item.status === "in_progress" ? active ? <ActivityGlyph animated /> : <span className="plan-current-dot" /> : <Circle />}</span>
+      <span>{item.step}</span>
+      <span className="sr-only">{item.status === "completed" ? "Done" : item.status === "in_progress" ? "In progress" : "Pending"}</span>
+    </li>)}</ol>
+  </div>;
+}
+
+function RunProcess({
+  runId,
   snapshot,
+  segments,
+  plan,
   toolOutput,
   nowMs,
   connection,
-  current,
-  latest
+  view,
+  files,
+  sources
 }: {
-  id: string;
-  activities: RunActivity[];
+  runId: string;
   snapshot: RunSnapshot;
+  segments: RunTimelineSegment[];
+  plan: PlanProjection | undefined;
   toolOutput: Map<string, string>;
   nowMs: number;
   connection: ConnectionState;
-  current: boolean;
-  latest: boolean;
+  view: RunActivityPresentation;
+  files: DownloadableFile[];
+  sources: SourceProjection[];
 }): ReactElement {
-  const isWorking = isActivelyWorkingStatus(snapshot.status);
-  const runningToolCount = activities.filter((activity) => activity.kind === "tool" && (activity.projection.event.tool.phase === "running" || activity.projection.event.tool.phase === "requested")).length;
-  const failureCount = activities.filter((activity) => {
+  const live = isActivelyWorkingStatus(snapshot.status) && connection === "open";
+  const activities = segments.flatMap((segment) => segment.kind === "execution" ? segment.activities : []);
+  const steps = activities.filter((activity) => activity.kind !== "error" && activity.kind !== "reasoning").length;
+  const issues = activities.filter((activity) => {
     if (activity.kind === "error") return !activity.event.retryable;
     if (activity.kind !== "tool") return false;
     const outcome = toolOutcome(activity.projection);
     return outcome === "error" || outcome === "declined";
   }).length;
-  const autoOpen = executionShouldOpen(snapshot.status, current, latest, failureCount > 0);
-  const newestActivitySequence = Math.max(0, ...activities.map((activity) => activity.kind === "reasoning" ? 0 : activity.kind === "tool" || activity.kind === "subagent" ? activity.projection.event.sequence : activity.event.sequence));
+  const newestSequence = Math.max(0, ...activities.map((activity) => activity.kind === "reasoning" ? 0 : activity.kind === "tool" || activity.kind === "subagent" ? activity.projection.event.sequence : activity.event.sequence));
+  const latestSegment = segments.at(-1);
+  const activeReasoningPartId = live && latestSegment?.kind === "reasoning" ? latestSegment.projection.partId : undefined;
+  const attentionAllowed = !isTerminalStatus(snapshot.status) || snapshot.status === "failed";
+
+  const autoOpen = processShouldOpen(snapshot.status);
   const [open, setOpen] = useState(autoOpen);
-  const previousOpenRef = useRef<{ runId: string; isRunning: boolean }>({ runId: id, isRunning: autoOpen });
-
+  const previousOpenRef = useRef<{ runId: string; isRunning: boolean }>({ runId, isRunning: autoOpen });
   useEffect(() => {
-    const previous = previousOpenRef.current;
-    const nextOpen = executionOpenTransition(previous, { runId: id, isRunning: autoOpen });
+    // A status change inside one phase keeps the reader's choice; only the
+    // transition into or out of active work opens or collapses the log.
+    const nextOpen = executionOpenTransition(previousOpenRef.current, { runId, isRunning: autoOpen });
     if (nextOpen !== undefined) setOpen(nextOpen);
-    previousOpenRef.current = { runId: id, isRunning: autoOpen };
-  }, [autoOpen, id]);
+    previousOpenRef.current = { runId, isRunning: autoOpen };
+  }, [autoOpen, runId]);
 
-  return <Collapsible className="execution-group" open={open} onOpenChange={setOpen}>
-    <CollapsibleTrigger asChild><button type="button" className="execution-summary" aria-label={`${open ? "收起执行过程" : "展开执行过程"}${failureCount ? `，含 ${failureCount} 条异常` : ""}`}>{current && isWorking && connection === "open" && runningToolCount > 0 ? <ActivityGlyph animated /> : <Activity aria-hidden="true" />}<span>{executionSummary({ status: snapshot.status, current, total: activities.length, runningTools: runningToolCount, connection })}</span>{failureCount ? <span className="execution-issue-count"><CircleAlert aria-hidden="true" />{failureCount} 条异常</span> : null}<span className="execution-chevron" aria-hidden="true">⌄</span></button></CollapsibleTrigger>
-    <CollapsibleContent className="execution-content ai-execution-content">
-      {activities.map((activity) => {
-        if (activity.kind === "reasoning") return null;
-        if (activity.kind === "tool") return <ToolStep key={`tool-${activity.projection.event.tool.callId}`} projection={activity.projection} output={activity.projection.event.tool.outputSummary ?? toolOutput.get(activity.projection.event.tool.callId)} nowMs={nowMs} active={current && isWorking && connection === "open"} attention={activity.projection.event.sequence === newestActivitySequence && (current || (latest && snapshot.status === "failed"))} />;
-        if (activity.kind === "subagent") return <ActivitySubagent key={`subagent-${activity.projection.event.subagent.subagentRunId}`} event={activity.projection.event} snapshot={snapshot} />;
-        if (activity.kind === "file" || activity.kind === "diff") return <ActivityArtifact key={`${activity.kind}-${activity.event.eventId}`} activity={activity} />;
-        return <ActivityError key={`error-${activity.event.eventId}`} event={activity.event} />;
-      })}
+  const summary = processSummary({ status: snapshot.status, steps, issues, elapsed: view.elapsed, liveHeadline: view.headline, connection });
+  const StatusIcon = snapshot.status === "failed" ? CircleAlert : snapshot.status === "cancelled" ? CircleSlash : undefined;
+
+  return <Collapsible className="run-process" open={open} onOpenChange={setOpen} data-status={snapshot.status} data-live={live}>
+    <CollapsibleTrigger asChild>
+      <button type="button" className="run-process-summary" aria-label={`${open ? "Hide" : "Show"} work log: ${summary.title}${summary.meta.length ? `, ${summary.meta.join(", ")}` : ""}`}>
+        <span className="run-process-mark" aria-hidden="true">{live
+          ? <ActivityGlyph animated />
+          : StatusIcon ? <StatusIcon />
+          : <svg viewBox="0 0 32 32" fill="none"><path d="M8 7h10a8 8 0 0 1 0 16H8V7Z" /><path d="M8 15h10M15 15l9 10M12 7v16" /></svg>}</span>
+        <span className={live ? "run-process-title text-shimmer" : "run-process-title"}>{summary.title}</span>
+        {summary.meta.map((item) => <span key={item} className={/issue/.test(item) ? "run-process-meta is-issue" : "run-process-meta"}>{item}</span>)}
+        <ChevronDown className="run-process-chevron" aria-hidden="true" />
+      </button>
+    </CollapsibleTrigger>
+    <CollapsibleContent className="run-process-body">
+      {plan ? <PlanChecklist plan={plan} active={live} /> : null}
+      <div className="run-process-steps">
+        {segments.map((segment) => {
+          if (segment.kind === "message") return <CommentaryStep key={`message-${segment.projection.partId}`} projection={segment.projection} files={files} sources={sources} isStreaming={live && !segment.projection.done} />;
+          if (segment.kind === "reasoning") return <ReasoningStep key={`reasoning-${segment.projection.partId}`} projection={segment.projection} isStreaming={segment.projection.partId === activeReasoningPartId} />;
+          return segment.activities.map((activity) => {
+            if (activity.kind === "reasoning") return null;
+            if (activity.kind === "tool") return <ToolStep key={`tool-${activity.projection.event.tool.callId}`} projection={activity.projection} output={activity.projection.event.tool.outputSummary ?? toolOutput.get(activity.projection.event.tool.callId)} nowMs={nowMs} live={live} attention={attentionAllowed && activity.projection.event.sequence === newestSequence} />;
+            if (activity.kind === "subagent") return <SubagentStep key={`subagent-${activity.projection.event.subagent.subagentRunId}`} event={activity.projection.event} snapshot={snapshot} />;
+            if (activity.kind === "file") return <FileStep key={`file-${activity.event.eventId}`} event={activity.event} />;
+            if (activity.kind === "diff") return <DiffStep key={`diff-${activity.event.eventId}`} event={activity.event} />;
+            return <ErrorStep key={`error-${activity.event.eventId}`} event={activity.event} />;
+          });
+        })}
+      </div>
     </CollapsibleContent>
   </Collapsible>;
 }
 
-function CompletionLine({ elapsed, updatedAt, usage }: { elapsed: string; updatedAt: string; usage: UsageSummary | undefined }): ReactElement {
-  const completionRef = useRef<HTMLDivElement>(null);
+function ResponseMessage({ projection, role, isStreaming, files, sources }: {
+  projection: AssistantMessageProjection;
+  role: ReturnType<typeof messageReadingRole>;
+  isStreaming: boolean;
+  files: DownloadableFile[];
+  sources: SourceProjection[];
+}): ReactElement {
+  return <div className={`run-response is-${role}`}>
+    {role === "partial" ? <p className="run-response-note"><CircleAlert aria-hidden="true" />{projection.done ? "The run ended before the task finished. This is the agent's last message." : "Partial message. The run ended while this was being written."}</p> : null}
+    <MessageContent className="assistant-response-text">
+      <MessageResponse isAnimating={isStreaming}>{annotateSourceLinks(linkArtifactMarkdown(projection.text, files, workspaceApiBase), sources)}</MessageResponse>
+    </MessageContent>
+  </div>;
+}
+
+function TurnFooter({ snapshot, answer, copied, onCopy, elapsed, usage, showError }: {
+  snapshot: RunSnapshot;
+  answer: string | undefined;
+  copied: boolean;
+  onCopy: (answer: string) => void;
+  elapsed: string;
+  usage: UsageSummary | undefined;
+  showError: boolean;
+}): ReactElement {
+  const footerRef = useRef<HTMLDivElement>(null);
   useGSAP(() => {
-    const root = completionRef.current;
+    const root = footerRef.current;
     if (!root) return;
     const media = gsap.matchMedia();
     media.add("(prefers-reduced-motion: no-preference)", () => {
       gsap.timeline({ defaults: { ease: "power2.out" } })
-        .fromTo(root, { autoAlpha: 0, y: 6 }, { autoAlpha: 1, y: 0, duration: 0.3, clearProps: "transform,opacity,visibility" })
-        .fromTo(".completion-mark", { scale: 0.58, rotation: -18 }, { scale: 1, rotation: 0, duration: 0.46, ease: "back.out(2)", clearProps: "transform" }, "<0.02")
-        .fromTo(".completion-line strong, .completion-line small", { autoAlpha: 0, x: -4 }, { autoAlpha: 1, x: 0, duration: 0.24, stagger: 0.055, clearProps: "transform,opacity,visibility" }, "<0.08");
+        .fromTo(root, { autoAlpha: 0, y: 4 }, { autoAlpha: 1, y: 0, duration: 0.28, clearProps: "transform,opacity,visibility" })
+        .fromTo(".turn-outcome > svg", { scale: 0.6 }, { scale: 1, duration: 0.36, ease: "back.out(2)", clearProps: "transform" }, "<0.04");
     }, root);
     return () => media.revert();
-  }, { scope: completionRef });
+  }, { scope: footerRef });
 
+  const status = snapshot.status;
   const tokenTotal = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
-  return <div ref={completionRef} className="completion-line"><span className="completion-mark"><Check aria-hidden="true" /></span><strong>任务完成</strong><small>用时 {elapsed} · {formatTime(updatedAt)}{tokenTotal ? ` · ${tokenTotal.toLocaleString()} tokens` : ""}</small></div>;
+  const outcome = status === "completed" ? { Icon: Check, label: "Completed" } : status === "failed" ? { Icon: CircleAlert, label: "Failed" } : { Icon: CircleSlash, label: "Stopped" };
+  const meta = [modelLabel(snapshot.model), elapsed, tokenTotal ? `${tokenTotal.toLocaleString()} tokens` : undefined, formatTime(snapshot.updatedAt)].filter(Boolean).join(" · ");
+  return <div ref={footerRef} className="turn-footer" data-status={status}>
+    {answer ? <MessageActions className="turn-actions">
+      <MessageAction className="turn-action" tooltip={copied ? "Copied" : "Copy response"} label={copied ? "Copied" : "Copy response"} onClick={() => onCopy(answer)}>{copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}</MessageAction>
+    </MessageActions> : null}
+    <span className="turn-outcome"><outcome.Icon aria-hidden="true" />{outcome.label}</span>
+    <span className="turn-footer-meta">{meta}</span>
+    {showError && snapshot.error ? <p className="turn-error" role="alert">{snapshot.error.message}</p> : null}
+  </div>;
 }
 
 export function RunTurn({ run, copied, onCopy, connection }: { run: ConversationRunView; copied: boolean; onCopy: (runId: string, answer: string) => void; connection: ConnectionState }): ReactElement {
-  const { answer, messages, toolOutput, timeline, usage, files, plan, sources } = useMemo(() => projectRunEvents(run.events), [run.events]);
+  const { answer, toolOutput, timeline, usage, files, plan, sources } = useMemo(() => projectRunEvents(run.events), [run.events]);
   const downloadableFiles = files.map((event) => event.file);
   const snapshot = run.snapshot;
   const isRunning = !isTerminalStatus(snapshot.status);
-  const isWorking = isActivelyWorkingStatus(snapshot.status);
+  const live = isActivelyWorkingStatus(snapshot.status) && connection === "open";
   const { view: activity, nowMs } = useRunActivity(run, connection);
-  const timelineSegments = useMemo(() => segmentRunTimeline(timeline), [timeline]);
-  const latestTimelineSegment = timelineSegments.at(-1);
-  const activeExecutionId = isRunning && latestTimelineSegment?.kind === "execution" ? latestTimelineSegment.id : undefined;
-  const latestExecutionId = timelineSegments.filter((segment) => segment.kind === "execution").at(-1)?.id;
-  const latestMessagePartId = messages.at(-1)?.partId;
-  const activeReasoningPartId = isWorking && connection === "open" && latestTimelineSegment?.kind === "reasoning" ? latestTimelineSegment.projection.partId : undefined;
-  return <section className="conversation-turn" data-run-id={run.runId} aria-busy={isWorking && connection === "open"}>
+  const segments = useMemo(() => segmentRunTimeline(timeline), [timeline]);
+  const tailIndex = responseTailIndex(segments);
+  const tailSegment = tailIndex >= 0 ? segments[tailIndex] : undefined;
+  const tail = tailSegment?.kind === "message" ? tailSegment.projection : undefined;
+  const processSegments = tailIndex >= 0 ? segments.filter((_, index) => index !== tailIndex) : segments;
+  const tailRole = tail ? messageReadingRole(snapshot.status, true, tail.done) : "update";
+  const hasProcess = processSegments.length > 0 || Boolean(plan && plan.steps.length);
+  const hasErrorStep = processSegments.some((segment) => segment.kind === "execution" && segment.activities.some((item) => item.kind === "error"));
+
+  return <section className="conversation-turn" data-run-id={run.runId} data-status={snapshot.status} aria-busy={live}>
     <Message from="user" className="openrigor-message user-turn">
       <MessageContent className="user-bubble">{run.visiblePrompt}</MessageContent>
-      <div className="turn-meta"><span>{formatTime(snapshot.createdAt)}</span><span>{modelLabel(snapshot.model)}</span></div>
+      <div className="turn-meta"><time dateTime={snapshot.createdAt}>{formatTime(snapshot.createdAt)}</time></div>
     </Message>
 
     <Message from="assistant" className="openrigor-message assistant-turn">
-      <div className="assistant-heading"><span className="assistant-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 7h10a8 8 0 0 1 0 16H8V7Z" /><path d="M8 15h10M15 15l9 10M12 7v16" /></svg></span><span><strong>OpenRigor</strong><small className={`run-status status-${snapshot.status}`}><span />{statusLabel(snapshot.status)}</small></span><code>{compactId(snapshot.runId)}</code></div>
-
-      {plan ? <ResearchPlan plan={plan} active={isWorking && connection === "open"} /> : null}
-
-      {timelineSegments.length ? <div className="run-timeline">
-        {timelineSegments.map((segment) => segment.kind === "message"
-          ? <AssistantMessageStep key={`message-${segment.projection.partId}`} projection={segment.projection} files={downloadableFiles} sources={sources} isStreaming={isWorking && connection === "open" && !segment.projection.done && segment.projection.partId === latestMessagePartId} readingRole={messageReadingRole(snapshot.status, segment.projection.partId === latestMessagePartId, segment.projection.done)} copied={copied} onCopy={(answer) => onCopy(run.runId, answer)} />
-          : segment.kind === "reasoning"
-            ? <ReasoningStep key={`reasoning-${segment.projection.partId}`} projection={segment.projection} isStreaming={segment.projection.partId === activeReasoningPartId} />
-            : <ExecutionGroup key={segment.id} id={`${snapshot.runId}:${segment.id}`} activities={segment.activities} snapshot={snapshot} toolOutput={toolOutput} nowMs={nowMs} connection={connection} current={segment.id === activeExecutionId} latest={segment.id === latestExecutionId} />)}
-      </div> : null}
-      {isRunning ? <RunActivityIndicator view={activity} /> : null}
-      <ResearchSources sources={sources} answer={answer} />
+      {hasProcess ? <RunProcess runId={snapshot.runId} snapshot={snapshot} segments={processSegments} plan={plan} toolOutput={toolOutput} nowMs={nowMs} connection={connection} view={activity} files={downloadableFiles} sources={sources} /> : null}
+      {tail ? <ResponseMessage projection={tail} role={tailRole} isStreaming={live && !tail.done} files={downloadableFiles} sources={sources} /> : null}
       <ResearchDeliverables files={downloadableFiles} />
-      {snapshot.status === "completed" ? <CompletionLine elapsed={activity.elapsed} updatedAt={snapshot.updatedAt} usage={usage} /> : null}
+      <ResearchSources sources={sources} answer={answer} />
+      {isRunning ? <RunActivityIndicator view={activity} /> : <TurnFooter snapshot={snapshot} answer={tail?.text} copied={copied} onCopy={(text) => onCopy(run.runId, text)} elapsed={activity.elapsed} usage={usage} showError={!hasErrorStep} />}
       <RunRequestPanel runId={snapshot.runId} status={snapshot.status} />
     </Message>
   </section>;

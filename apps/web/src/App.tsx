@@ -97,7 +97,7 @@ import {
   PromptInputTools
 } from "./components/ai-elements/prompt-input";
 import { RunTurn } from "./features/chat/run-turn";
-import { ActivityGlyph, ComposerRunActivity } from "./features/chat/run-activity";
+import { ActivityGlyph } from "./features/chat/run-activity";
 import { isActivelyWorkingStatus } from "./run-presentation";
 import { ComposerPalette, ExecutionSelector, type ComposerPaletteItem } from "./features/composer";
 import {
@@ -211,25 +211,25 @@ function createClientRequestId(): string {
 }
 
 const skillOptions: SkillOption[] = [
-  { id: "browser", label: "浏览器", description: "检查网页与交互状态", icon: Globe2 },
-  { id: "frontend-design", label: "前端设计", description: "优化产品界面与体验", icon: Palette },
-  { id: "pdf", label: "PDF", description: "读取、生成与检查 PDF", icon: FileText },
-  { id: "pptx", label: "演示文稿", description: "创建与编辑 PowerPoint", icon: Presentation },
-  { id: "spreadsheets", label: "电子表格", description: "分析并生成表格文件", icon: FileSpreadsheet },
-  { id: "research-lit", label: "文献检索", description: "检索和梳理研究资料", icon: BookOpen },
-  { id: "docx", label: "Word 文档", description: "保留格式地创建与编辑文档", icon: FileText },
-  { id: "playwright", label: "网页测试", description: "自动验收真实浏览器交互", icon: Terminal },
-  { id: "paper-analyze", label: "论文分析", description: "深读论文并提炼方法与证据", icon: BrainCircuit },
-  { id: "imagegen", label: "图像生成", description: "生成适合交付的位图素材", icon: Palette },
-  { id: "skill-creator", label: "创建技能", description: "为 Codex 打包可复用工作流", icon: WandSparkles },
-  { id: "openai-docs", label: "OpenAI 文档", description: "核对 Codex 与 OpenAI 官方能力", icon: BookOpen }
+  { id: "browser", label: "Browser", description: "Inspect web pages and interaction state", icon: Globe2 },
+  { id: "frontend-design", label: "Frontend design", description: "Improve product interfaces and experience", icon: Palette },
+  { id: "pdf", label: "PDF", description: "Read, create, and check PDFs", icon: FileText },
+  { id: "pptx", label: "Presentations", description: "Create and edit PowerPoint decks", icon: Presentation },
+  { id: "spreadsheets", label: "Spreadsheets", description: "Analyze and produce spreadsheet files", icon: FileSpreadsheet },
+  { id: "research-lit", label: "Literature search", description: "Find and organize research material", icon: BookOpen },
+  { id: "docx", label: "Word documents", description: "Create and edit documents with formatting intact", icon: FileText },
+  { id: "playwright", label: "Web testing", description: "Verify real browser interactions automatically", icon: Terminal },
+  { id: "paper-analyze", label: "Paper analysis", description: "Read papers closely and extract methods and evidence", icon: BrainCircuit },
+  { id: "imagegen", label: "Image generation", description: "Generate deliverable raster assets", icon: Palette },
+  { id: "skill-creator", label: "Create a skill", description: "Package a reusable workflow for Codex", icon: WandSparkles },
+  { id: "openai-docs", label: "OpenAI docs", description: "Check Codex and OpenAI capabilities against the docs", icon: BookOpen }
 ];
 
 const contextOptions: ContextOption[] = [
-  { id: "workspace", label: "当前项目", path: ".", description: "项目代码、文档与 Git 状态", icon: Folder },
-  { id: "agents", label: "项目规则", path: "AGENTS.md", description: "仓库内的工程与安全约束", icon: ShieldCheck },
-  { id: "report", label: "技术报告", path: "docs/TECHNICAL_REPORT.md", description: "ClawsGO 技术调研与复刻路线", icon: FileText },
-  { id: "design", label: "设计系统", path: "design-system/openrigor/MASTER.md", description: "OpenRigor 的视觉与交互规则", icon: Palette }
+  { id: "workspace", label: "Current project", path: ".", description: "Project code, docs, and Git state", icon: Folder },
+  { id: "agents", label: "Project rules", path: "AGENTS.md", description: "Engineering and security constraints in the repository", icon: ShieldCheck },
+  { id: "report", label: "Technical report", path: "docs/TECHNICAL_REPORT.md", description: "Technical research and implementation route", icon: FileText },
+  { id: "design", label: "Design system", path: "design-system/openrigor/MASTER.md", description: "OpenRigor visual and interaction rules", icon: Palette }
 ];
 
 const themeIcons: Record<ThemePreference, LucideIcon> = {
@@ -251,14 +251,14 @@ function formatTime(value: string): string {
 
 function statusLabel(status: RunSnapshot["status"]): string {
   const labels: Record<RunSnapshot["status"], string> = {
-    queued: "排队中",
-    running: "执行中",
-    waiting_tool: "调用工具",
-    waiting_user: "等待确认",
-    cancelling: "正在停止",
-    completed: "已完成",
-    failed: "失败",
-    cancelled: "已停止"
+    queued: "Queued",
+    running: "Working",
+    waiting_tool: "Working",
+    waiting_user: "Needs input",
+    cancelling: "Stopping",
+    completed: "Completed",
+    failed: "Failed",
+    cancelled: "Stopped"
   };
   return labels[status];
 }
@@ -351,7 +351,7 @@ function ExampleDialogPanel({
   }, { scope: contentRef, dependencies: [visual], revertOnUpdate: true });
 
   return <DialogContent ref={contentRef} className="dialog-content example-dialog" showCloseButton={false} onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
-        <DialogClose asChild><button type="button" className="dialog-close example-dialog-close" aria-label="关闭"><X aria-hidden="true" /></button></DialogClose>
+        <DialogClose asChild><button type="button" className="dialog-close example-dialog-close" aria-label="Close"><X aria-hidden="true" /></button></DialogClose>
         <div className="example-dialog-visual" aria-hidden="true">
           <div className="example-dialog-stage">
             <span className="example-dialog-glow" />
@@ -367,11 +367,11 @@ function ExampleDialogPanel({
               <DialogDescription className="dialog-description">{example.description}</DialogDescription>
             </div>
           </div>
-          <div className="example-meta"><span>本地 Codex</span><span>工作区任务</span><small>确认后可编辑</small></div>
+          <div className="example-meta"><span>Local Codex</span><span>Workspace task</span><small>Editable before sending</small></div>
           <div className="example-prompt"><p>{example.prompt}</p></div>
           <div className="dialog-actions">
-            <DialogClose asChild><button type="button" className="secondary-button">取消</button></DialogClose>
-            <button type="button" className="primary-button" onClick={() => onUse(example)}>使用这个案例</button>
+            <DialogClose asChild><button type="button" className="secondary-button">Cancel</button></DialogClose>
+            <button type="button" className="primary-button" onClick={() => onUse(example)}>Use this example</button>
           </div>
         </div>
       </DialogContent>;
@@ -427,12 +427,12 @@ function KnowledgeDialog({
         <div className="dialog-header">
           <span className="dialog-icon"><Library aria-hidden="true" /></span>
           <div>
-            <DialogTitle className="dialog-title">知识与上下文</DialogTitle>
-            <DialogDescription className="dialog-description">选择本次任务优先读取的本地材料。</DialogDescription>
+            <DialogTitle className="dialog-title">Knowledge and context</DialogTitle>
+            <DialogDescription className="dialog-description">Choose local material the agent should read first for this task.</DialogDescription>
           </div>
-          <DialogClose asChild><button type="button" className="dialog-close" aria-label="关闭"><X aria-hidden="true" /></button></DialogClose>
+          <DialogClose asChild><button type="button" className="dialog-close" aria-label="Close"><X aria-hidden="true" /></button></DialogClose>
         </div>
-        <label className="dialog-search"><Search aria-hidden="true" /><input aria-label="搜索项目材料" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目材料" /></label>
+        <label className="dialog-search"><Search aria-hidden="true" /><input aria-label="Search project material" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project material" /></label>
         <div className="context-list">
           {filtered.map((item) => {
             const Icon = item.icon;
@@ -444,7 +444,7 @@ function KnowledgeDialog({
             </button>;
           })}
         </div>
-        <div className="dialog-actions split-actions"><span>{selected.length} 个上下文将在任务开始时提供给 Codex</span><DialogClose asChild><button type="button" className="primary-button">完成</button></DialogClose></div>
+        <div className="dialog-actions split-actions"><span>{selected.length} {selected.length === 1 ? "source" : "sources"} will be given to Codex when the task starts</span><DialogClose asChild><button type="button" className="primary-button">Done</button></DialogClose></div>
       </DialogContent>
   </Dialog>;
 }
@@ -914,7 +914,7 @@ export function App(): ReactElement {
         if (!event || event.runId !== runId || !isCurrentSource()) return;
         consumeEvent(event);
       } catch {
-        if (isCurrentSource()) setError("服务返回了无法识别的事件");
+        if (isCurrentSource()) setError("The server sent an event this version does not recognize.");
       }
     });
   }
@@ -975,7 +975,7 @@ export function App(): ReactElement {
         ...(continueFromRunId === undefined ? {} : { continueFromRunId }),
         signal: controller.signal
       });
-      if (!response.ok || !body.runId) throw new Error(body.error ?? "无法启动任务");
+      if (!response.ok || !body.runId) throw new Error(body.error ?? "Unable to start the task");
       if (queuedMessage) setQueuedMessages((previous) => acknowledgeQueuedFollowup(previous, queuedMessage.id, body.runId!));
       if (viewRequestRef.current !== viewRequest) { if (!queuedMessage) acknowledgeDraft(sourceDraft); return; }
 
@@ -1023,7 +1023,7 @@ export function App(): ReactElement {
       subscribe(body.runId);
     } catch (caught) {
       if (viewRequestRef.current !== viewRequest || controller.signal.aborted) return;
-      const message = caught instanceof Error ? caught.message : "无法启动任务";
+      const message = caught instanceof Error ? caught.message : "Unable to start the task";
       setError(message);
       if (queuedMessage) setQueuedMessages((previous) => previous.map((item) => item.id === queuedMessage.id ? { ...item, error: message } : item));
     } finally {
@@ -1040,11 +1040,11 @@ export function App(): ReactElement {
     try {
       const response = await fetch(`${apiBase}/api/runs/${runId}/cancel`, { method: "POST" });
       const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(body.error ?? "无法停止任务");
+      if (!response.ok) throw new Error(body.error ?? "Unable to stop the task");
       if (viewRequestRef.current === viewRequest && connection === "closed") subscribe(runId);
     } catch (caught) {
       if (viewRequestRef.current !== viewRequest) return;
-      setError(caught instanceof Error ? caught.message : "无法停止任务");
+      setError(caught instanceof Error ? caught.message : "Unable to stop the task");
     }
   }
 
@@ -1073,7 +1073,7 @@ export function App(): ReactElement {
           window.history.replaceState({}, "", "/chat");
           return;
         }
-        throw new Error(body.error ?? "无法读取任务");
+        throw new Error(body.error ?? "Unable to load the task");
       }
       if (viewRequestRef.current !== viewRequest) return;
       closeStream("idle");
@@ -1100,7 +1100,7 @@ export function App(): ReactElement {
       else closeStream("idle");
     } catch (caught) {
       if (viewRequestRef.current !== viewRequest || controller.signal.aborted) return;
-      setError(caught instanceof Error ? caught.message : "无法读取任务");
+      setError(caught instanceof Error ? caught.message : "Unable to load the task");
     } finally {
       if (viewRequestRef.current === viewRequest) { restoreAbortRef.current = null; setIsRestoringTask(false); }
     }
@@ -1133,7 +1133,7 @@ export function App(): ReactElement {
       setCopiedRunId(runId);
       window.setTimeout(() => setCopiedRunId((current) => current === runId ? null : current), 1800);
     } catch {
-      setError("无法复制回答，请检查浏览器权限");
+      setError("Couldn't copy the response. Check the browser's clipboard permission.");
     }
   }
 
@@ -1183,9 +1183,9 @@ export function App(): ReactElement {
     }
   }
 
-  const connectionLabel = connection === "open" ? "实时" : connection === "connecting" ? "连接中" : connection === "closed" ? "断开" : "空闲";
+  const connectionLabel = connection === "open" ? "Live" : connection === "connecting" ? "Reconnecting" : connection === "closed" ? "Offline" : "Idle";
   const visibleContextCount = selectedContexts.filter((id) => id !== "workspace").length;
-  const runtimeLabel = connection === "open" ? "事件流已连接" : connection === "connecting" ? "正在连接事件流" : connection === "closed" ? "事件流已断开" : "等待新任务";
+  const runtimeLabel = connection === "open" ? "Event stream connected" : connection === "connecting" ? "Connecting to the event stream" : connection === "closed" ? "Event stream disconnected" : "Waiting for a new task";
   const ThemeIcon = themeIcons[theme];
 
   function selectRouting(value: string): void {
@@ -1291,7 +1291,7 @@ export function App(): ReactElement {
           {!conversation && !page ? <div className="header-workspace-name"><span>Workspace</span><ChevronRight aria-hidden="true" /><strong>Personal</strong></div> : null}
         </div>
         <div className="header-actions"><PreviewLauncher />
-          {conversation && !page ? <span className={`connection connection-${connection}`} data-working={isRunning && connection === "open"} role="status" aria-live="polite" title={runtimeLabel}>{isRunning && connection === "open" && snapshot && isActivelyWorkingStatus(snapshot.status) ? <ActivityGlyph animated /> : <span className="status-dot" />}{isRunning && snapshot && connection === "open" ? snapshot.status === "waiting_user" ? "等待确认" : snapshot.status === "cancelling" ? "正在停止" : snapshot.status === "queued" ? "排队中" : "执行中" : connectionLabel}</span> : null}
+          {conversation && !page && (isRunning || connection === "closed" || connection === "connecting") ? <span className={`connection connection-${connection}`} data-working={isRunning && connection === "open"} role="status" aria-live="polite" title={runtimeLabel}>{isRunning && connection === "open" && snapshot && isActivelyWorkingStatus(snapshot.status) ? <ActivityGlyph animated /> : <span className="status-dot" />}{isRunning && snapshot && connection === "open" ? snapshot.status === "waiting_user" ? "Needs input" : snapshot.status === "cancelling" ? "Stopping" : snapshot.status === "queued" ? "Queued" : "Working" : connectionLabel}</span> : null}
           <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="icon-control theme-toggle" aria-label="Change appearance" title="Change appearance"><ThemeIcon aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu theme-menu" align="end" sideOffset={8}><DropdownMenuLabel className="menu-caption">Appearance</DropdownMenuLabel><DropdownMenuRadioGroup value={theme} onValueChange={(value) => selectTheme(value as ThemePreference)}>{themeOptions.map((option) => { const Icon = themeIcons[option.value]; return <DropdownMenuRadioItem className="radio-menu-item theme-menu-item" value={option.value} key={option.value}><Icon aria-hidden="true" /><span><strong>{option.value === "system" ? "System" : option.value === "dark" ? "Dark" : "Light"}</strong></span>{theme === option.value ? <Check aria-hidden="true" /> : null}</DropdownMenuRadioItem>; })}</DropdownMenuRadioGroup></DropdownMenuContent></DropdownMenu>
         </div>
       </header>
@@ -1302,15 +1302,14 @@ export function App(): ReactElement {
         </section>}
       </div>}
       {(!page || isModalPage || ["research", "guides", "handoff"].includes(page)) ? <div className="composer-region"><div className="composer-wrap">
-        {isRunning && latestRun ? <ComposerRunActivity run={latestRun} connection={connection} /> : null}
         {conversationQueue.length ? <div className="queued-messages" aria-label="Queued follow-up messages">{conversationQueue.map((message, index) => <div key={message.id}><Clock3 aria-hidden="true" /><span><small>{message.error ? `Could not send: ${message.error}` : message.predecessorRunId !== snapshot?.runId && index === 0 ? "Waiting for the original preceding turn" : `Queued ${index + 1}`}</small>{message.prompt}</span>{message.error ? <button type="button" aria-label="Retry queued message" onClick={() => setQueuedMessages((previous) => previous.map((item) => { if (item.id !== message.id) return item; const { error: _error, ...retry } = item; return retry; }))}><ArrowUp aria-hidden="true" /></button> : null}<button type="button" onClick={() => setQueuedMessages((previous) => removeQueuedFollowup(previous, message.id))} aria-label="Remove queued message"><X aria-hidden="true" /></button></div>)}</div> : null}
-        <div className="composer-context-row"><button type="button" onClick={() => navigatePage("workspace")}><HardDrive aria-hidden="true" /><span>Local workspace</span></button><DropdownMenu><DropdownMenuTrigger asChild><button type="button"><Folder aria-hidden="true" /><span>{composerProject?.name ?? (conversation && activeProjectId ? "Project task" : "Choose a project")}</span><ChevronDown aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu project-select-menu" align="start" side="top" sideOffset={8}><DropdownMenuLabel className="menu-caption">Projects</DropdownMenuLabel><DropdownMenuItem className="simple-menu-item" onSelect={() => chooseComposerProject(null)}><Folder aria-hidden="true" /><span>Standalone task</span>{!composerProject ? <Check aria-hidden="true" /> : null}</DropdownMenuItem>{workspace?.projects.map((project) => <DropdownMenuItem className="simple-menu-item" key={project.id} onSelect={() => chooseComposerProject(project)}><Folder aria-hidden="true" /><span>{project.name}</span>{composerProject?.id === project.id ? <Check aria-hidden="true" /> : null}</DropdownMenuItem>)}<DropdownMenuItem className="simple-menu-item" onSelect={openNewProject}><FolderPlus aria-hidden="true" /><span>New project</span></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+        {!conversation ? <div className="composer-context-row"><button type="button" onClick={() => navigatePage("workspace")}><HardDrive aria-hidden="true" /><span>Local workspace</span></button><DropdownMenu><DropdownMenuTrigger asChild><button type="button"><Folder aria-hidden="true" /><span>{composerProject?.name ?? (conversation && activeProjectId ? "Project task" : "Choose a project")}</span><ChevronDown aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu project-select-menu" align="start" side="top" sideOffset={8}><DropdownMenuLabel className="menu-caption">Projects</DropdownMenuLabel><DropdownMenuItem className="simple-menu-item" onSelect={() => chooseComposerProject(null)}><Folder aria-hidden="true" /><span>Standalone task</span>{!composerProject ? <Check aria-hidden="true" /> : null}</DropdownMenuItem>{workspace?.projects.map((project) => <DropdownMenuItem className="simple-menu-item" key={project.id} onSelect={() => chooseComposerProject(project)}><Folder aria-hidden="true" /><span>{project.name}</span>{composerProject?.id === project.id ? <Check aria-hidden="true" /> : null}</DropdownMenuItem>)}<DropdownMenuItem className="simple-menu-item" onSelect={openNewProject}><FolderPlus aria-hidden="true" /><span>New project</span></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div> : null}
         <ComposerPalette open={Boolean(paletteMode)} mode={paletteMode} items={paletteItems} activeIndex={paletteIndex} selected={paletteMode === "skill" ? selectedSkills : selectedContexts} onSelect={selectPaletteItem} />
         <input ref={attachmentInputRef} type="file" multiple hidden onChange={(event) => { void attachFiles(event.target.files); }} />
         <PromptInput className="composer" onSubmit={async (message) => { await startRun(message.text); }}>
           {(selectedSkills.length || hasExplicitContexts || attachments.length) ? <div className="composer-chips">{selectedContexts.filter((id) => id !== "workspace").map((id) => { const item = availableContexts.find((context) => context.id === id); return item ? <ComposerChip key={id} icon={Library} label={item.label} onRemove={() => setSelectedContexts((current) => current.filter((value) => value !== id))} /> : null; })}{selectedSkills.map((id) => { const item = availableSkills.find((skill) => skill.id === id); return item ? <ComposerChip key={id} icon={Layers3} label={item.label} onRemove={() => setSelectedSkills((current) => current.filter((value) => value !== id))} /> : null; })}{attachments.map((attachment) => <ComposerChip key={attachment.id} icon={Paperclip} label={attachment.name} onRemove={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))} />)}</div> : null}
           <PromptInputBody><PromptInputTextarea ref={textareaRef} value={prompt} onChange={(event) => updatePrompt(event.target.value)} onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); void attachFiles(event.clipboardData.files); } }} onKeyDown={handleComposerKeyDown} onFocus={() => { const token = prompt.match(/(?:^|\s)([\/@])[^\s]*$/); if (token) setPaletteMode(token[1] === "/" ? "skill" : "context"); }} placeholder={isRestoringTask ? "Loading task…" : uploading ? "Uploading attachment…" : isRunning ? "Add a follow-up. It will run when the current task finishes…" : "Describe your task, / for commands and skills, @ for files, tasks & knowledge"} rows={2} aria-label="Task description" aria-controls={paletteMode ? `composer-palette-${paletteMode}` : undefined} aria-activedescendant={paletteMode && paletteItems[paletteIndex] ? `composer-${paletteMode}-${paletteItems[paletteIndex].id}` : undefined} /></PromptInputBody>
-          <PromptInputFooter className="composer-toolbar"><PromptInputTools className="composer-left"><DropdownMenu><DropdownMenuTrigger asChild><button ref={addMenuTriggerRef} type="button" className="icon-tool" aria-label="Add" title="Add"><Plus aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu add-menu" align="start" side="top" sideOffset={10}><DropdownMenuItem className="simple-menu-item" onSelect={() => attachmentInputRef.current?.click()}><Paperclip aria-hidden="true" /><span><strong>Upload files</strong><small>Attach local documents or images</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("knowledge", addMenuTriggerRef.current)}><Library aria-hidden="true" /><span><strong>Add context</strong><small>Workspace files and sources</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => { updatePrompt(`${prompt}${prompt && !prompt.endsWith(" ") ? " " : ""}/`); window.setTimeout(() => textareaRef.current?.focus(), 0); }}><WandSparkles aria-hidden="true" /><span><strong>Use a skill</strong><small>Specialized agent workflows</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("images")}><ImagePlus aria-hidden="true" /><span><strong>Generate an image</strong><small>Open image studio</small></span></DropdownMenuItem></DropdownMenuContent></DropdownMenu><ExecutionSelector runtimeModels={runtimeModels} routing={routing} model={model} effort={effort} mode={mode} onRoutingChange={selectRouting} onModelChange={selectModel} onEffortChange={selectEffort} onModeChange={selectRunMode} /></PromptInputTools><div className="composer-right">{isRunning && prompt.trim() ? <button type="submit" className="queue-button" disabled={uploading || isRestoringTask || !isComposerContextReady} aria-label="Queue follow-up"><ArrowUp aria-hidden="true" /></button> : null}{isRunning ? <button ref={actionButtonRef} type="button" className="stop-button" onClick={() => void cancelRun()} disabled={snapshot?.status === "cancelling"} aria-label="Stop task"><Square aria-hidden="true" /><span>{snapshot?.status === "cancelling" ? "正在停止" : "停止"}</span></button> : <button ref={actionButtonRef} type="submit" className="send-button" disabled={isStarting || isRestoringTask || !isComposerContextReady || uploading || !prompt.trim()} aria-label="Send task"><ArrowUp aria-hidden="true" /></button>}</div></PromptInputFooter>
+          <PromptInputFooter className="composer-toolbar"><PromptInputTools className="composer-left"><DropdownMenu><DropdownMenuTrigger asChild><button ref={addMenuTriggerRef} type="button" className="icon-tool" aria-label="Add" title="Add"><Plus aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu add-menu" align="start" side="top" sideOffset={10}><DropdownMenuItem className="simple-menu-item" onSelect={() => attachmentInputRef.current?.click()}><Paperclip aria-hidden="true" /><span><strong>Upload files</strong><small>Attach local documents or images</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("knowledge", addMenuTriggerRef.current)}><Library aria-hidden="true" /><span><strong>Add context</strong><small>Workspace files and sources</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => { updatePrompt(`${prompt}${prompt && !prompt.endsWith(" ") ? " " : ""}/`); window.setTimeout(() => textareaRef.current?.focus(), 0); }}><WandSparkles aria-hidden="true" /><span><strong>Use a skill</strong><small>Specialized agent workflows</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("images")}><ImagePlus aria-hidden="true" /><span><strong>Generate an image</strong><small>Open image studio</small></span></DropdownMenuItem></DropdownMenuContent></DropdownMenu><ExecutionSelector runtimeModels={runtimeModels} routing={routing} model={model} effort={effort} mode={mode} onRoutingChange={selectRouting} onModelChange={selectModel} onEffortChange={selectEffort} onModeChange={selectRunMode} /></PromptInputTools><div className="composer-right">{isRunning && prompt.trim() ? <button type="submit" className="queue-button" disabled={uploading || isRestoringTask || !isComposerContextReady} aria-label="Queue follow-up"><ArrowUp aria-hidden="true" /></button> : null}{isRunning ? <button ref={actionButtonRef} type="button" className="stop-button" onClick={() => void cancelRun()} disabled={snapshot?.status === "cancelling"} aria-label="Stop task"><Square aria-hidden="true" /><span>{snapshot?.status === "cancelling" ? "Stopping" : "Stop"}</span></button> : <button ref={actionButtonRef} type="submit" className="send-button" disabled={isStarting || isRestoringTask || !isComposerContextReady || uploading || !prompt.trim()} aria-label="Send task"><ArrowUp aria-hidden="true" /></button>}</div></PromptInputFooter>
         </PromptInput>
       </div>{!conversation ? <p className="composer-hint"><span><kbd>/</kbd> Skills <span>·</span> <kbd>@</kbd> Context</span><span><kbd>↵</kbd> Send <span>·</span> <kbd>⇧ ↵</kbd> New line</span></p> : null}</div> : null}
     </main></PreviewLayout>

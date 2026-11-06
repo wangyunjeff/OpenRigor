@@ -554,7 +554,7 @@ export function classifyCodexToolOutcome(item: Record<string, unknown>, output?:
   const exitCode = codexReportedExitCode(item, output);
   const durationMs = codexNumber(item.durationMs);
   if (status === "declined") {
-    return { outcome: "declined", ...(exitCode === undefined ? {} : { exitCode }), ...(durationMs === undefined ? {} : { durationMs }), diagnostic: "工具调用被拒绝" };
+    return { outcome: "declined", ...(exitCode === undefined ? {} : { exitCode }), ...(durationMs === undefined ? {} : { durationMs }), diagnostic: "The tool call was declined" };
   }
 
   const command = codexString(item.command);
@@ -571,7 +571,7 @@ export function classifyCodexToolOutcome(item: Record<string, unknown>, output?:
       outcome: "no-result",
       exitCode,
       ...(durationMs === undefined ? {} : { durationMs }),
-      diagnostic: "未找到匹配结果（退出码 1）"
+      diagnostic: "No matches found (exit code 1)"
     };
   }
   if (exitCode !== undefined && exitCode !== 0 && (searchLike || listLike) && hasUsableCommandOutput(visibleOutput)) {
@@ -579,7 +579,7 @@ export function classifyCodexToolOutcome(item: Record<string, unknown>, output?:
       outcome: "partial",
       exitCode,
       ...(durationMs === undefined ? {} : { durationMs }),
-      diagnostic: `命令返回退出码 ${exitCode}，但产生了部分输出`
+      diagnostic: `Command exited with code ${exitCode} after producing partial output`
     };
   }
 
@@ -588,7 +588,7 @@ export function classifyCodexToolOutcome(item: Record<string, unknown>, output?:
       outcome: "error",
       ...(exitCode === undefined ? {} : { exitCode }),
       ...(durationMs === undefined ? {} : { durationMs }),
-      diagnostic: codexErrorDiagnostic(item) ?? (exitCode === undefined ? "工具执行失败" : `命令返回退出码 ${exitCode}`)
+      diagnostic: codexErrorDiagnostic(item) ?? (exitCode === undefined ? "The tool failed" : `Command exited with code ${exitCode}`)
     };
   }
 
@@ -599,7 +599,7 @@ export function classifyCodexToolOutcome(item: Record<string, unknown>, output?:
       outcome: "error",
       exitCode,
       ...(durationMs === undefined ? {} : { durationMs }),
-      diagnostic: `命令报告已完成但退出码为 ${exitCode}`
+      diagnostic: `Command reported completion with exit code ${exitCode}`
     };
   }
   return {

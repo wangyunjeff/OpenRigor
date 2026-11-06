@@ -6,7 +6,7 @@
 
 **Direction:** Quiet operator console with a premium reading surface
 
-**Updated:** 2026-08-10
+**Updated:** 2026-11-06
 
 ## Scope And Clean-Room Rule
 
@@ -148,26 +148,27 @@ Browse examples -> Preview full draft -> Confirm use -> Edit in Composer -> Send
 
 ### Running A Task
 
-- The user turn is right-aligned and compact; the Agent answer is unframed prose.
-- Current reasoning and execution may open automatically. Completed groups collapse to return attention to the result.
-- Tool calls with the same `callId` project into one row; output expands beneath that row.
-- Files and diffs use the same timeline language but retain explicit names and revision/action labels.
-- While a run is active, the send control becomes a stop control. The textarea remains editable for drafting the next task but cannot start a second run.
-- Automatic scroll follows only while the reader stays within `96px` of the bottom. Otherwise show “jump to latest”.
-- The sidebar keeps up to eight recent run references in browser `localStorage`, highlights the active run, and reloads a run through `GET /api/runs/:runId` without starting another task.
-- Browser-side recent run references are a local convenience, not durable history. They become unavailable after the in-memory API process loses the corresponding run and must later move to the persistent control plane.
+- The user turn is right-aligned and compact; its time appears on hover. The model, duration, and token count belong to the response footer, not the prompt.
+- The response is answer-first. Everything the agent did before its response (plan, thinking, commentary, tools, files, diffs, subagents, errors) lives in one work-log disclosure above the response.
+- The work-log summary is one line: the agent mark, then "Working" / the live stage while running, or "Worked for 12s", "Failed after 12s", "Stopped after 12s" when finished, followed by step and issue counts and a chevron.
+- The work log is open while the agent works and after a failure, and collapses when the run completes or is stopped. A status change inside one phase keeps the reader's open/closed choice.
+- The message that reads as the response stays outside the log. Generated-file records published right after it do not demote it; any later reasoning, tool call, or error does.
+- While a run is active, the send control becomes a stop control. The textarea remains editable for queueing a follow-up.
+- Live status is a single quiet line at the end of the turn (glyph, stage, detail, elapsed time). Helper text appears only for waiting, reconnecting, disconnected, queued, or silent states. The header shows a status pill only while a run is active or the connection is degraded; the composer carries no duplicate status bar.
+- Automatic scroll follows only while the reader stays near the bottom. Otherwise show a "jump to latest" control.
+- The follow-up composer shares the reading column's width and omits the project picker: a conversation keeps its original directory.
 
 ## Message And Activity Rules
 
 - User message: one restrained bubble; no avatar card, gradient, or oversized padding.
-- Agent identity: a compact icon, name, run status, and short run id.
-- Reasoning: one collapsible activity row with a separate readable detail body.
-- Tools: a vertical step stream with running, succeeded, or failed phase labels.
-- Terminal/tool output: monospace, scrollable, and isolated on a darker surface.
-- Files: artifact row with filename and revision; do not imply a file is downloadable until a valid artifact URL exists.
-- Diff: expandable row with path and raw diff until a dedicated viewer exists.
-- Final answer: GFM Markdown with stable spacing for headings, lists, tables, quotes, links, inline code, and fenced code.
-- Completion: one quiet success line after the answer, not a celebratory card.
+- Work-log rows share one grammar: a 22px icon on a thin rail, a title, then right-aligned duration, an icon-only status (label in assistive text and tooltip), and a chevron that points right when closed and down when open. Rows without details show no chevron.
+- Tool icons follow the tool family (command, search, file, browser, subagent, image, plan, wait, MCP). Command titles use the monospace face.
+- Terminal output is monospace, scrollable, and isolated on a darker surface. Failures lead with the most specific failure line, then the runtime diagnostic, with raw output and arguments behind "Details".
+- Files: a "Created/Updated name" row that opens the preview, with revision and download only when a valid artifact URL exists.
+- Diff: an expandable "Edited path" row with the raw diff until a dedicated viewer exists.
+- Final answer: GFM Markdown at 15px/1.75 with real list markers, single-frame code blocks (language and actions in one header), and ruled tables.
+- Footer: one line after the response with copy, the outcome (Completed / Failed / Stopped), model, duration, tokens, and time. No celebratory card.
+- All interface copy is English, matching the shell. Agent and provider text is shown as written.
 
 ## Menus, Dialogs, And Focus
 

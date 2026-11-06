@@ -25,10 +25,10 @@ export interface ManualExecutionPreference {
 }
 
 export const modelOptions: ModelOption[] = [
-  { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", description: "复杂推理、工程与长链路任务", group: "gpt-5.6" },
-  { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", description: "兼顾速度与质量的日常主力", group: "gpt-5.6" },
-  { value: "gpt-5.6-luna", label: "GPT-5.6 Luna", description: "快速迭代与聚焦执行", group: "gpt-5.6" },
-  { value: "auto", label: "Auto", description: "跟随本地 Codex 当前设置", group: "local" }
+  { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", description: "Complex reasoning, engineering, and long tasks", group: "gpt-5.6" },
+  { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", description: "Balanced speed and quality for everyday work", group: "gpt-5.6" },
+  { value: "gpt-5.6-luna", label: "GPT-5.6 Luna", description: "Fast iteration and focused execution", group: "gpt-5.6" },
+  { value: "auto", label: "Auto", description: "Follow the local Codex setting", group: "local" }
 ];
 
 /** Only models advertised by the local runtime may extend the persistent selector catalog. */
@@ -56,17 +56,17 @@ export function persistModelCatalog(value: unknown): RuntimeModel[] {
 }
 
 export const effortOptions: EffortOption[] = [
-  { value: "low", label: "Low", description: "更快响应" },
-  { value: "medium", label: "Medium", description: "日常默认" },
-  { value: "high", label: "High", description: "深入推理" },
-  { value: "xhigh", label: "XHigh", description: "复杂任务" },
-  { value: "max", label: "Max", description: "最高预算" }
+  { value: "low", label: "Low", description: "Faster replies" },
+  { value: "medium", label: "Medium", description: "Everyday default" },
+  { value: "high", label: "High", description: "Deeper reasoning" },
+  { value: "xhigh", label: "XHigh", description: "Complex tasks" },
+  { value: "max", label: "Max", description: "Largest budget" }
 ];
 
 export const tokenResearchRoutingProfile = {
   id: "tokenresearch" as const,
   label: "TokenResearch",
-  description: "自研调度算法，以更低成本接近顶级模型能力",
+  description: "Local routing that approaches top-model quality at lower cost",
   coordinator: { model: "gpt-5.6-sol" as const, effort: "max" as const, mode: "ultra" as const },
   subagent: { agentType: "luna-worker", model: "gpt-5.6-luna" as const, effort: "max" as const }
 };
@@ -81,9 +81,9 @@ export const defaultManualExecutionPreference: ManualExecutionPreference = {
 };
 
 export const themeOptions: Array<{ value: ThemePreference; label: string; description: string }> = [
-  { value: "light", label: "明亮", description: "浅色工作区" },
-  { value: "dark", label: "深色", description: "深色工作区" },
-  { value: "system", label: "跟随系统", description: "自动匹配设备外观" }
+  { value: "light", label: "Light", description: "Light workspace" },
+  { value: "dark", label: "Dark", description: "Dark workspace" },
+  { value: "system", label: "System", description: "Match the device appearance" }
 ];
 
 export const themeStorageKey = "openrigor.theme";

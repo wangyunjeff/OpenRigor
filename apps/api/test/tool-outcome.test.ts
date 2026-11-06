@@ -37,7 +37,7 @@ test("classifies an rg exit-1 search miss as no-result", () => {
       outcome: "no-result",
       exitCode: 1,
       durationMs: 19,
-      diagnostic: "未找到匹配结果（退出码 1）"
+      diagnostic: "No matches found (exit code 1)"
     }
   );
 });
@@ -52,7 +52,7 @@ test("reads Codex's wrapped exit marker and removes it from the displayed output
       commandActions: [searchAction],
       exitCode: 0
     }, output),
-    { outcome: "no-result", exitCode: 1, diagnostic: "未找到匹配结果（退出码 1）" }
+    { outcome: "no-result", exitCode: 1, diagnostic: "No matches found (exit code 1)" }
   );
 });
 
@@ -114,7 +114,7 @@ test("classifies nonzero list/search output with stdout and warnings as partial"
       outcome: "partial",
       exitCode: 2,
       durationMs: 31,
-      diagnostic: "命令返回退出码 2，但产生了部分输出"
+      diagnostic: "Command exited with code 2 after producing partial output"
     }
   );
 });
@@ -141,7 +141,7 @@ test("keeps PowerShell-only diagnostics as a real error", () => {
       outcome: "error",
       exitCode: 1,
       durationMs: 12,
-      diagnostic: "命令返回退出码 1"
+      diagnostic: "Command exited with code 1"
     }
   );
 });
@@ -172,7 +172,7 @@ test("classifies an exit-1 search wrapped after another command as partial when 
     outcome: "partial",
     exitCode: 1,
     durationMs: 23,
-    diagnostic: "命令返回退出码 1，但产生了部分输出"
+    diagnostic: "Command exited with code 1 after producing partial output"
   });
 });
 
@@ -189,7 +189,7 @@ test("keeps a search syntax failure as a real error", () => {
     outcome: "error",
     exitCode: 2,
     durationMs: 7,
-    diagnostic: "命令返回退出码 2"
+    diagnostic: "Command exited with code 2"
   });
 });
 
@@ -208,7 +208,7 @@ test("does not reinterpret a non-search exit-1 command", () => {
 test("preserves declined and successful outcomes with native metadata", () => {
   assert.deepEqual(
     classifyCodexToolOutcome({ type: "commandExecution", status: "declined", durationMs: 4 }),
-    { outcome: "declined", durationMs: 4, diagnostic: "工具调用被拒绝" }
+    { outcome: "declined", durationMs: 4, diagnostic: "The tool call was declined" }
   );
   assert.deepEqual(
     classifyCodexToolOutcome({ type: "commandExecution", status: "completed", exitCode: 0, durationMs: 42 }),

@@ -204,7 +204,7 @@ export function applyRunEvent(conversation: ConversationViewState, event: RunEve
       ...snapshot,
       status: event.status,
       progress: event.status === "completed" ? 100 : snapshot.progress,
-      currentStep: event.status === "completed" ? "已完成" : event.status === "cancelled" ? "已停止" : "执行失败",
+      currentStep: event.status === "completed" ? "Completed" : event.status === "cancelled" ? "Stopped" : "Failed",
       updatedAt: event.ts
     };
   }

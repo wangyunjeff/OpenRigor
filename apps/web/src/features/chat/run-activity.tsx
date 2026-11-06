@@ -38,7 +38,12 @@ export function ActivityGlyph({ animated, state = "working", className = "" }: {
   </span>;
 }
 
-export function RunActivityIndicator({ view, compact = false }: { view: RunActivityPresentation; compact?: boolean }): ReactElement {
+/**
+ * A single quiet line at the end of a live turn. The helper sentence appears
+ * only when the user has something to understand or do (input, reconnects,
+ * silence); routine progress stays on one line.
+ */
+export function RunActivityIndicator({ view }: { view: RunActivityPresentation }): ReactElement {
   const root = useRef<HTMLDivElement>(null);
   useGSAP(() => {
     if (!root.current) return;
@@ -48,19 +53,14 @@ export function RunActivityIndicator({ view, compact = false }: { view: RunActiv
     });
     return () => media.revert();
   }, { scope: root });
-  return <div ref={root} className={`run-presence ${compact ? "composer-presence" : "transcript-presence"}`} data-state={view.state} data-animated={view.animated}>
+  const showHelper = view.stale || view.state === "waiting-user" || view.state === "reconnecting" || view.state === "disconnected" || view.state === "queued";
+  const showDetail = view.detail && view.detail !== view.headline;
+  return <div ref={root} className="run-presence" data-state={view.state} data-animated={view.animated} data-stale={view.stale}>
     <ActivityGlyph animated={view.animated} state={view.state} />
     <div className="run-presence-copy">
-      <strong role={compact ? "status" : undefined} aria-live={compact ? "polite" : "off"}>{view.headline}</strong>
-      <span className="run-presence-detail" title={view.detail}>{view.detail}</span>
-      {!compact ? <small>{view.helper}</small> : null}
+      <p className="run-presence-line"><strong role="status" aria-live="polite">{view.headline}</strong>{showDetail ? <span className="run-presence-detail" title={view.detail}>{view.detail}</span> : null}</p>
+      {showHelper && view.helper ? <small>{view.helper}</small> : null}
     </div>
-    <div className="run-presence-time"><span>已用时 <b>{view.elapsed}</b></span><small>{view.lastUpdate}</small></div>
+    <span className="run-presence-time" title={view.lastUpdate}>{view.elapsed}</span>
   </div>;
-}
-
-export function ComposerRunActivity({ run, connection }: { run: ConversationRunView; connection: RunActivityConnection }): ReactElement | null {
-  const { view } = useRunActivity(run, connection);
-  if (["completed", "failed", "cancelled"].includes(run.snapshot.status)) return null;
-  return <RunActivityIndicator view={view} compact />;
 }

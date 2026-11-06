@@ -2,15 +2,13 @@ import { usePreview } from "../preview/preview-context";
 import { useEffect, useMemo, useRef, useState, type ReactElement, type MouseEvent } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
-import { ArrowDownToLine, ArrowUpRight, BookOpen, Check, ChevronDown, Circle, CircleAlert, FileCode2, FileSpreadsheet, FileText, Files, Globe2, Image, ListChecks, LoaderCircle, Maximize2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, BookOpen, ChevronDown, CircleAlert, FileCode2, FileSpreadsheet, FileText, Files, Globe2, Image, LoaderCircle, Maximize2 } from "lucide-react";
 import { Artifact, ArtifactDescription, ArtifactHeader, ArtifactTitle } from "../../components/ai-elements/artifact";
-import { Plan, PlanContent, PlanDescription, PlanHeader, PlanTitle, PlanTrigger } from "../../components/ai-elements/plan";
 import { Source, Sources, SourcesContent, SourcesTrigger } from "../../components/ai-elements/sources";
-import type { PlanProjection, SourceProjection } from "../../conversation";
+import type { SourceProjection } from "../../conversation";
 import { workspaceApiBase } from "../workspace/api";
-import { artifactBasename, artifactPreviewKind, artifactSizeLabel, artifactTypeLabel, extractAnswerReferences, resolveArtifactUrl, safeWebUrl, sourceDomain, summarizePlan, type ResearchArtifact } from "./ai-elements-adapter";
+import { artifactBasename, artifactPreviewKind, artifactSizeLabel, artifactTypeLabel, extractAnswerReferences, resolveArtifactUrl, safeWebUrl, sourceDomain, type ResearchArtifact } from "./ai-elements-adapter";
 import "./research-results.css";
-import { ActivityGlyph } from "./run-activity";
 
 function useResultEntrance(rootRef: { current: HTMLDivElement | null }, key: string): void {
   useGSAP(() => {
@@ -20,29 +18,6 @@ function useResultEntrance(rootRef: { current: HTMLDivElement | null }, key: str
     if (!cards.length) return;
     gsap.fromTo(cards, { autoAlpha: 0, y: 5 }, { autoAlpha: 1, y: 0, duration: .24, stagger: .035, ease: "power2.out", clearProps: "transform,opacity,visibility" });
   }, { scope: rootRef, dependencies: [key], revertOnUpdate: true });
-}
-
-export function ResearchPlan({ plan, active }: { plan: PlanProjection; active: boolean }): ReactElement | null {
-  const progress = summarizePlan(plan.steps);
-  const completed = progress.total > 0 && progress.completed === progress.total;
-  const [open, setOpen] = useState(active);
-  const previousActive = useRef(active);
-  const toolPlan = (plan as PlanProjection & { provenance?: string }).provenance === "tool";
-  useEffect(() => { if (previousActive.current && !active) setOpen(false); previousActive.current = active; }, [active]);
-  if (!progress.total) return null;
-  return <Plan className="research-plan" data-complete={completed} isStreaming={false} open={open} onOpenChange={setOpen}>
-    <PlanHeader className="research-plan-header">
-      <span className="research-plan-icon" aria-hidden="true"><ListChecks /></span>
-      <div className="research-plan-copy"><PlanTitle>Research plan</PlanTitle><PlanDescription>{progress.current ?? (progress.completed === progress.total ? "All planned steps completed" : "The agent's latest plan")}</PlanDescription></div>
-      {toolPlan ? <span className="research-plan-provenance">Agent plan</span> : null}<span className="research-plan-count">{progress.completed}<span>/{progress.total}</span></span>
-      <PlanTrigger className="research-plan-toggle" aria-label={open ? "Collapse research plan" : "Expand research plan"} />
-    </PlanHeader>
-    {!completed || active ? <div className="research-plan-progress" role="progressbar" aria-label="Completed plan steps" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.completed}><span style={{ width: `${progress.percent}%` }} /></div> : null}
-    <PlanContent className="research-plan-content">
-      {plan.explanation ? <p className="research-plan-explanation">{plan.explanation}</p> : null}
-      <ol>{plan.steps.map((item, index) => <li key={`${index}:${item.step}`} data-state={item.status}><span className="research-plan-step-mark" aria-hidden="true">{item.status === "completed" ? <Check /> : item.status === "in_progress" ? active ? <ActivityGlyph animated /> : <span className="plan-current-dot" /> : <Circle />}</span><span>{item.step}</span><small>{item.status === "completed" ? "Done" : item.status === "in_progress" ? active ? "In progress" : "Last active" : "Pending"}</small></li>)}</ol>
-    </PlanContent>
-  </Plan>;
 }
 
 export function ResearchSources({ sources, answer }: { sources: SourceProjection[]; answer: string }): ReactElement | null {

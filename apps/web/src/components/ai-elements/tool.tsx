@@ -11,8 +11,10 @@ import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
   CheckCircleIcon,
   ChevronDownIcon,
+  CircleDashedIcon,
   CircleIcon,
   ClockIcon,
+  LoaderCircleIcon,
   WrenchIcon,
   XCircleIcon,
 } from "lucide-react";
@@ -37,6 +39,12 @@ export type ToolHeaderProps = {
   className?: string;
   statusText?: string;
   durationText?: string;
+  /** Leading glyph for the tool family; defaults to a wrench. */
+  icon?: ReactNode;
+  /** "icon" keeps the row compact and moves the status label to assistive text. */
+  statusDisplay?: "badge" | "icon";
+  /** Hide the disclosure chevron when the row has no details to reveal. */
+  expandable?: boolean;
 } & (
   | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
   | {
@@ -47,13 +55,13 @@ export type ToolHeaderProps = {
 );
 
 const statusLabels: Record<ToolPart["state"], string> = {
-  "approval-requested": "等待确认",
-  "approval-responded": "已确认",
-  "input-available": "运行中",
-  "input-streaming": "准备中",
-  "output-available": "已完成",
-  "output-denied": "已拒绝",
-  "output-error": "失败",
+  "approval-requested": "Awaiting approval",
+  "approval-responded": "Responded",
+  "input-available": "Running",
+  "input-streaming": "Pending",
+  "output-available": "Completed",
+  "output-denied": "Denied",
+  "output-error": "Error",
 };
 
 const statusIcons: Record<ToolPart["state"], ReactNode> = {
@@ -73,6 +81,16 @@ export const getStatusBadge = (status: ToolPart["state"], label = statusLabels[s
   </Badge>
 );
 
+const compactStatusIcons: Record<ToolPart["state"], ReactNode> = {
+  "approval-requested": <ClockIcon className="size-3.5" />,
+  "approval-responded": <CheckCircleIcon className="size-3.5" />,
+  "input-available": <LoaderCircleIcon className="size-3.5 animate-spin" />,
+  "input-streaming": <CircleDashedIcon className="size-3.5" />,
+  "output-available": <CheckCircleIcon className="size-3.5" />,
+  "output-denied": <XCircleIcon className="size-3.5" />,
+  "output-error": <XCircleIcon className="size-3.5" />,
+};
+
 export const ToolHeader = ({
   className,
   title,
@@ -81,10 +99,14 @@ export const ToolHeader = ({
   statusText,
   durationText,
   toolName,
+  icon,
+  statusDisplay = "badge",
+  expandable = true,
   ...props
 }: ToolHeaderProps) => {
   const derivedName =
     type === "dynamic-tool" ? toolName : type.split("-").slice(1).join("-");
+  const label = statusText ?? statusLabels[state];
 
   return (
     <CollapsibleTrigger
@@ -92,16 +114,19 @@ export const ToolHeader = ({
         "flex w-full items-center justify-between gap-4 p-3",
         className
       )}
+      data-tool-state={state}
+      disabled={!expandable}
       {...props}
     >
       <div className="tool-header-left flex min-w-0 items-center gap-2">
-        <WrenchIcon className="size-4 text-muted-foreground" />
+        <span className="tool-header-icon" aria-hidden="true">{icon ?? <WrenchIcon className="size-4 text-muted-foreground" />}</span>
         <span className="tool-header-title font-medium text-sm">{title ?? derivedName}</span>
-        {getStatusBadge(state, statusText ?? statusLabels[state])}
+        {statusDisplay === "badge" ? getStatusBadge(state, label) : null}
       </div>
       <span className="tool-header-right">
         {durationText ? <span className="tool-header-duration">{durationText}</span> : null}
-        <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+        {statusDisplay === "icon" ? <span className="tool-header-status" title={label}>{compactStatusIcons[state]}<span className="sr-only">{label}</span></span> : null}
+        {expandable ? <ChevronDownIcon className="tool-header-chevron size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" /> : <span className="tool-header-chevron-spacer" aria-hidden="true" />}
       </span>
     </CollapsibleTrigger>
   );

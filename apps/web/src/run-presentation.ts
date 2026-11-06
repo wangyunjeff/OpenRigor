@@ -85,22 +85,22 @@ export function toolElapsedMs(firstAt: string, lastAt: string, running: boolean,
 
 export function formatLastUpdate(ageMs: number): string {
   const seconds = Math.max(0, Math.floor(ageMs / 1000));
-  if (seconds < 2) return "刚刚更新";
-  if (seconds < 60) return `${seconds}s 前更新`;
+  if (seconds < 2) return "Updated just now";
+  if (seconds < 60) return `Updated ${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m 前更新`;
-  return `${Math.floor(minutes / 60)}h 前更新`;
+  if (minutes < 60) return `Updated ${minutes}m ago`;
+  return `Updated ${Math.floor(minutes / 60)}h ago`;
 }
 
 function readableStep(step: string | undefined, fallback: string): string {
   const value = step?.trim();
   if (!value) return fallback;
   const normalized = value.toLowerCase();
-  if (normalized === "running codex") return "Codex 正在处理任务";
-  if (normalized.includes("command.execute") || normalized.includes("shell")) return "正在执行命令";
-  if (normalized.includes("web.search") || normalized.includes("browser")) return "正在检索资料";
-  if (normalized.includes("file.read")) return "正在读取文件";
-  if (normalized.includes("file.write") || normalized.includes("file.edit")) return "正在更新文件";
+  if (normalized === "running codex" || normalized === "starting codex") return "Codex is working on the task";
+  if (normalized.includes("command.execute") || normalized.includes("shell")) return "Running a command";
+  if (normalized.includes("web.search") || normalized.includes("browser")) return "Searching the web";
+  if (normalized.includes("file.read")) return "Reading files";
+  if (normalized.includes("file.write") || normalized.includes("file.edit") || normalized.includes("file.change")) return "Editing files";
   return value;
 }
 
@@ -116,18 +116,18 @@ export function presentRunActivity(
   const ageMs = Math.max(0, nowMs - (Number.isFinite(latestAt) ? latestAt : nowMs));
   const terminal = snapshot.status === "completed" || snapshot.status === "failed" || snapshot.status === "cancelled";
   const fallback: Record<RunStatus, string> = {
-    queued: "任务排队中",
-    running: "任务运行中",
-    waiting_tool: "正在调用工具",
-    waiting_user: "需要你的确认",
-    cancelling: "正在停止任务",
-    completed: "任务已经完成",
-    failed: "任务执行失败",
-    cancelled: "任务已经停止"
+    queued: "Queued",
+    running: "Working",
+    waiting_tool: "Using a tool",
+    waiting_user: "Needs your input",
+    cancelling: "Stopping",
+    completed: "Completed",
+    failed: "Failed",
+    cancelled: "Stopped"
   };
-  const stageHeadline = context?.stage === "reasoning" ? "正在思考"
-    : context?.stage === "tool" ? "正在调用工具"
-    : context?.stage === "answer" ? "正在生成回答"
+  const stageHeadline = context?.stage === "reasoning" ? "Thinking"
+    : context?.stage === "tool" ? "Using a tool"
+    : context?.stage === "answer" ? "Writing the response"
     : fallback[snapshot.status];
   const detail = readableStep(context?.detail ?? snapshot.currentStep, fallback[snapshot.status]);
   const state: RunActivityState = terminal ? snapshot.status as "completed" | "failed" | "cancelled"
@@ -138,22 +138,22 @@ export function presentRunActivity(
     : snapshot.status === "cancelling" ? "stopping" : "working";
   const stale = state === "working" && ageMs >= STALE_EVENT_AFTER_MS;
   let headline = snapshot.status === "running" || snapshot.status === "waiting_tool" ? stageHeadline : fallback[snapshot.status];
-  let helper = state === "waiting-user" ? "确认或回答后，任务才会继续。"
-    : state === "queued" ? "等待运行时开始处理；开始后会自动显示进展。"
-    : state === "stopping" ? "已请求停止，正在等待运行时确认。"
-    : terminal ? "" : "有新进展时会自动显示。";
+  let helper = state === "waiting-user" ? "The task continues after you respond."
+    : state === "queued" ? "Waiting for the runtime to start. Progress appears here automatically."
+    : state === "stopping" ? "Stop requested. Waiting for the runtime to confirm."
+    : terminal ? "" : "New progress appears here automatically.";
   let visibleDetail = detail;
   if (state === "reconnecting") {
-    headline = "正在恢复实时连接";
-    visibleDetail = `最后记录：${fallback[snapshot.status]}`;
-    helper = "正在重新连接；恢复后会同步最新进度。";
+    headline = "Reconnecting";
+    visibleDetail = `Last recorded: ${fallback[snapshot.status]}`;
+    helper = "Restoring the live connection. The latest progress will sync when it returns.";
   } else if (state === "disconnected") {
-    headline = "实时连接已断开";
-    visibleDetail = `最后记录：${fallback[snapshot.status]}`;
-    helper = "暂时无法确认最新进度；任务可能仍在后台运行。";
+    headline = "Live connection lost";
+    visibleDetail = `Last recorded: ${fallback[snapshot.status]}`;
+    helper = "Progress can't be confirmed right now. The task may still be running in the background.";
   } else if (stale) {
-    headline = "任务运行中，等待下一条输出";
-    helper = "暂时没有新的输出；有更新时会自动显示。";
+    headline = "Still working, waiting for output";
+    helper = "No new output yet. Updates appear here automatically.";
   }
   return {
     state,
@@ -167,21 +167,31 @@ export function presentRunActivity(
   };
 }
 
-/** The execution rail describes actual records, rather than presenting finished tools as live. */
-export function executionSummary({ status, current, total, runningTools, connection }: {
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * One line that summarizes the agent's work above the response. It reports
+ * recorded steps only; a finished tool is never described as live.
+ */
+export function processSummary({ status, steps, issues, elapsed, liveHeadline, connection }: {
   status: RunStatus;
-  current: boolean;
-  total: number;
-  runningTools: number;
+  steps: number;
+  issues: number;
+  elapsed: string;
+  liveHeadline?: string;
   connection: RunActivityConnection;
-}): string {
-  const records = `${total} 条执行记录`;
-  if (!current || status === "completed" || status === "failed" || status === "cancelled") return records;
-  if (connection === "connecting") return `正在恢复连接 · ${records}`;
-  if (connection !== "open") return `实时连接已断开 · ${records}`;
-  if (status === "waiting_user") return `等待你的确认 · ${records}`;
-  if (status === "cancelling") return `正在停止 · ${records}`;
-  if (status === "queued") return `任务排队中 · ${records}`;
-  if (runningTools > 0) return `正在执行 ${runningTools} 个工具 · ${records}`;
-  return `${records} · 等待下一步输出`;
+}): { title: string; meta: string[] } {
+  const meta = steps > 0 ? [plural(steps, "step")] : [];
+  if (issues > 0) meta.push(plural(issues, "issue"));
+  if (status === "completed") return { title: `Worked for ${elapsed}`, meta };
+  if (status === "failed") return { title: `Failed after ${elapsed}`, meta };
+  if (status === "cancelled") return { title: `Stopped after ${elapsed}`, meta };
+  if (connection === "connecting") return { title: "Reconnecting", meta };
+  if (connection !== "open") return { title: "Live connection lost", meta };
+  if (status === "waiting_user") return { title: "Waiting for your input", meta };
+  if (status === "cancelling") return { title: "Stopping", meta };
+  if (status === "queued") return { title: "Queued", meta };
+  return { title: liveHeadline ?? "Working", meta };
 }
