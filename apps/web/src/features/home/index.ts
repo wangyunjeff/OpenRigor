@@ -9,4 +9,5 @@ export {
   type TabId
 } from "./example-data";
 export { ExamplePreviewArt, type ExamplePreviewArtProps } from "./example-preview-art";
-export { HomeView, type HomeViewProps } from "./home-view";
+export { HomeSections, HomeView, type HomeSectionsProps, type HomeTask, type HomeViewProps } from "./home-view";
+export { researchCases, type ResearchStarter } from "./research-starters";

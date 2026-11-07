@@ -43,25 +43,26 @@ Do not install AI Elements or prompt-kit wholesale. Do not adopt AI SDK `useChat
 ## Desktop Frame
 
 ```text
-┌──────── 240px navigation ────────┬──────────────── flexible task area ────────────────┐
-│ Brand / workspace                │ 60px task header                                  │
+┌──────── 248px navigation ────────┬──────────────── flexible task area ────────────────┐
+│ Brand (goes home)                │ 56px header: task or page title · Files · theme    │
 │ New task                         ├────────────────────────────────────────────────────┤
-│ Knowledge and context            │                                                    │
-│ Agent and skills                 │     672px launch surface                           │
-│ Project                          │        or                                          │
-│ Recent tasks                     │     768px conversation reading column              │
-│                                  │                                                    │
-│ Runtime / profile                ├────────────────────────────────────────────────────┤
-│                                  │ 768px persistent Composer                          │
+│ Search            ⌘K             │  Home: greeting → composer → Continue → workflows  │
+│ Image Studio                     │  Task: 768px reading column (work log + response)  │
+│ Skill Market                     │  Page: one header, content below                   │
+│ Projects  [+]                    │                                                    │
+│ Standalone tasks                 ├────────────────────────────────────────────────────┤
+│ Profile → agent, workspace,      │ 768px composer (task view; home places it inline)  │
+│   settings, guides, appearance   │                                                    │
 └──────────────────────────────────┴────────────────────────────────────────────────────┘
 ```
 
-- There is no right-side Inspector in the alpha. Execution detail belongs inline with the answer.
-- The task header and Composer stay fixed in the application frame; only the launch/conversation area scrolls.
-- On desktop the flexible task area is an inset canvas with a `12px` outer margin, a `20px` radius, and a quiet border; the sidebar remains full-height.
-- The launch reading surface is `672px`; the conversation and Composer maximum width is `768px`.
-- At widths above `720px`, the sidebar is `240px` and always present.
-- At `720px` and below, the sidebar becomes an off-canvas sheet. This is fallback behavior, not the primary design target.
+- Navigation lists destinations only. Settings dialogs (agent, workspace, settings) and guides live in the profile menu; they are not navigation peers of pages.
+- Home is composer-first: the greeting states what OpenRigor does, the composer follows immediately, then recent work ("Continue") and research workflow starting points. Choosing a starting point fills the composer; it never starts a run.
+- Inline pages (Image Studio, Skill Market, Projects, Research workflows, Guides) show their title, and Back where it applies, in the app header. They do not render a second page bar.
+- The composer toolbar holds every per-task choice: attachments, model and reasoning, and (for new tasks) the project. A follow-up keeps its conversation's project.
+- The header "Files" control opens the viewer for this task's files, sources, and pages. "Workspace" names only the workspace settings.
+- On the task view the reading column and composer share one width; the scroll area spans the canvas.
+- At widths above `900px`, the sidebar is always present. At `900px` and below it becomes an off-canvas sheet.
 
 ## Color Tokens
 

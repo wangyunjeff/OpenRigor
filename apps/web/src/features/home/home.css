@@ -1,93 +1,69 @@
-.main-area .launch-view { width: min(800px, calc(100% - 80px)); }
-.launch-view .landing-identity {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 23px;
-  color: var(--faint);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.4;
-}
-.launch-view .landing-identity svg { width: 21px; height: 21px; color: var(--accent); }
-.launch-view .landing-identity > span:first-of-type { color: var(--text-soft); font-size: 12px; font-weight: 550; letter-spacing: -.2px; }
-.launch-view .landing-identity i { display: block; height: 12px; width: 1px; margin: 0 2px; background: var(--line-strong); }
-.launch-view .launch-inner h1 { font-size: clamp(32px, 3.2vw, 40px); font-weight: 450; line-height: 1.2; letter-spacing: -1.3px; }
-.launch-view .landing-subtitle { max-width: 610px; margin-top: 12px; color: var(--muted); font-size: 14px; line-height: 1.65; }
-.launch-view .landing-cards { width: 100%; grid-template-columns: 1.2fr 1fr; grid-template-rows: 143px 143px; gap: 14px; margin-top: 29px; }
-.launch-view .landing-card {
-  isolation: isolate;
-  padding: 22px 23px;
-  border: 1px solid var(--line);
-  border-radius: 17px;
-  background: var(--surface-soft);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 2%, transparent);
-  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
-}
-.launch-view .landing-card:hover { border-color: var(--line-strong); background: color-mix(in srgb, var(--surface-soft) 97%, var(--text)); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent); }
-.launch-view .landing-card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }
-.launch-view .landing-card-category { position: relative; z-index: 1; color: var(--faint); font-size: 9px; font-weight: 500; line-height: 1.4; text-transform: uppercase; letter-spacing: 1.1px; }
-.launch-view .landing-card-title { display: block; margin-top: 8px; color: var(--text); font-size: 19px; font-weight: 450; line-height: 1.25; letter-spacing: -.5px; }
-.launch-view .landing-card-copy { max-width: 68%; margin-top: 7px; color: var(--muted); font-size: 12px; line-height: 1.65; }
-.launch-view .landing-research { grid-column: 1; grid-row: 1 / 3; padding: 27px; }
-.launch-view .landing-research .landing-card-category { color: var(--accent); }
-.launch-view .landing-research .landing-card-title { margin-top: 11px; font-size: 26px; letter-spacing: -.85px; }
-.launch-view .landing-research .landing-card-copy { max-width: 90%; }
-.launch-view .landing-card-action { display: inline-flex; align-items: center; gap: 10px; position: relative; z-index: 1; width: fit-content; margin-top: auto; color: var(--text-soft); font-size: 11px; font-weight: 450; line-height: 1.5; }
-.launch-view .landing-card-action svg { width: 14px; height: 14px; transition: transform .18s ease; }
-.launch-view .landing-card:hover .landing-card-action svg { transform: translateX(3px); }
-.launch-view .landing-card-arrow { position: absolute; right: 19px; top: 21px; z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; color: var(--faint); transition: color .18s ease, transform .18s ease; }
-.launch-view .landing-card-arrow svg { width: 15px; height: 15px; }
-.launch-view .landing-card:hover .landing-card-arrow { color: var(--text-soft); transform: translate(1px, -1px); }
-.launch-view .generated-instrument { z-index: -1; filter: brightness(1.1) contrast(1.15) saturate(.72); mix-blend-mode: lighten; opacity: .72; transition: opacity .2s ease; }
-.launch-view .landing-card:hover .generated-instrument { opacity: .85; }
-.launch-view .instrument-research { width: 200px; height: 186px; left: auto; right: 2px; bottom: 0; background-size: 600px auto; background-position: left 46%; }
-.launch-view .instrument-guides { width: 105px; height: 102px; right: 9px; bottom: -4px; background-size: 315px auto; background-position: center 50%; opacity: .55; }
-.launch-view .instrument-handoff { width: 108px; height: 92px; right: 9px; bottom: -1px; background-size: 324px auto; background-position: right 50%; opacity: .59; }
-.launch-view .research-art { z-index: -1; width: 210px; height: 177px; left: auto; right: -1px; bottom: -5px; opacity: .52; }
-.launch-view .guides-art, .launch-view .handoff-art { z-index: -1; width: 104px; height: 102px; right: 5px; bottom: -9px; opacity: .45; }
+/*
+ * Home: greeting → composer (primary action) → recent work → starting points.
+ * Width follows the reading column so the composer, recents, and starters
+ * share one edge. This file loads before styles.css; selectors are qualified.
+ */
+.main-area .launch-view { width: min(var(--reading-width, 768px), calc(100% - 2 * var(--reading-gutter, 24px))); margin: 0 auto; padding: clamp(40px, 13vh, 132px) 0 0; }
+.launch-view .launch-inner { width: 100%; }
+.launch-view .launch-inner h1 { margin: 0; color: var(--text); font-size: clamp(30px, 3vw, 38px); font-weight: 450; line-height: 1.2; letter-spacing: -1.1px; }
+.launch-view .landing-subtitle { max-width: 600px; margin: 10px 0 0; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+
+.home-sections { display: grid; width: min(var(--reading-width, 768px), calc(100% - 2 * var(--reading-gutter, 24px))); gap: 30px; margin: 34px auto 56px; }
+.home-section { min-width: 0; }
+.home-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.home-section-heading h2 { margin: 0; color: var(--text-soft); font-size: 13px; font-weight: 550; letter-spacing: 0; }
+.home-section-link { display: inline-flex; min-height: 28px; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--muted); padding: 2px 0; font-size: 12.5px; }
+.home-section-link svg { width: 13px; height: 13px; transition: transform .16s ease; }
+.home-section-link:hover { color: var(--text); }
+.home-section-link:hover svg { transform: translateX(2px); }
+
+/* Recent work: a quiet list, newest first. */
+.home-recent-list { display: grid; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 14px; list-style: none; overflow: hidden; background: var(--fill-subtle); }
+.home-recent-list { grid-template-columns: minmax(0, 1fr); }
+.home-recent-list li { min-width: 0; }
+.home-recent-list li + li { border-top: 1px solid var(--line); }
+.home-recent-item { display: flex; width: 100%; min-height: 46px; align-items: center; gap: 11px; border: 0; background: transparent; color: var(--text-soft); padding: 9px 14px; font-size: 13.5px; text-align: left; transition: background .15s ease; }
+.home-recent-item:hover { background: var(--fill-soft); color: var(--text); }
+.home-recent-status { display: inline-grid; flex: 0 0 auto; place-items: center; width: 18px; height: 18px; color: var(--faint); }
+.home-recent-status svg { width: 15px; height: 15px; }
+.home-recent-status.tone-done { color: var(--green); }
+.home-recent-status.tone-failed { color: var(--danger); }
+.home-recent-status.tone-attention { color: var(--blue); }
+.home-recent-status.tone-live { color: var(--gold); }
+.home-recent-title { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-recent-pin { width: 12px; height: 12px; flex: 0 0 auto; color: var(--muted); }
+.home-recent-item time { flex: 0 0 auto; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Starting points: concrete outcomes with the generated case artwork. */
+.home-starter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.home-starter { display: flex; min-width: 0; align-items: stretch; gap: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--fill-subtle); color: var(--text); padding: 10px; text-align: left; transition: border-color .16s ease, background .16s ease; }
+.home-starter:hover { border-color: var(--line-strong); background: var(--fill-soft); }
+.home-starter-image { position: relative; flex: 0 0 76px; height: 76px; overflow: hidden; border-radius: 9px; background: var(--surface-raised); }
+.home-starter-image img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease; }
+.home-starter:hover .home-starter-image img { transform: scale(1.04); }
+.home-starter-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; gap: 3px; padding-right: 4px; }
+.home-starter-copy small { color: var(--faint); font-size: 11px; line-height: 1.4; }
+.home-starter-copy strong { color: var(--text); font-size: 14px; font-weight: 500; line-height: 1.35; }
+.home-starter-copy > span { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 12.5px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.home-starter-note { margin: 10px 0 0; color: var(--faint); font-size: 12px; line-height: 1.55; }
+
+.home-footnote { margin: 0; color: var(--faint); font-size: 12.5px; }
+.home-footnote button { border: 0; background: transparent; color: var(--text-soft); padding: 0; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.home-footnote button:hover { color: var(--text); text-decoration-color: currentColor; }
+
+:is(.home-section-link, .home-recent-item, .home-starter, .home-footnote button):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.home-recent-item:focus-visible { outline-offset: -2px; }
 
 @media (max-width: 700px) {
-  .launch-view .landing-cards { grid-template-columns: 1.15fr 1fr; gap: 11px; }
-  .launch-view .landing-card { padding: 20px 18px; }
-  .launch-view .landing-research { padding: 23px; }
-  .launch-view .landing-card-title { font-size: 17px; }
-  .launch-view .landing-research .landing-card-title { font-size: 24px; }
-  .launch-view .landing-card-copy { max-width: 86%; }
-  .launch-view .instrument-guides, .launch-view .instrument-handoff { opacity: .32; }
+  .home-starter-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 540px) {
-  .main-area .launch-view { width: calc(100% - 36px); }
-  .launch-view .landing-identity { gap: 8px; margin-bottom: 18px; font-size: 10px; }
-  .launch-view .landing-identity svg { width: 19px; height: 19px; }
-  .launch-view .landing-identity > span:first-of-type { font-size: 11px; }
-  .launch-view .launch-inner h1 { font-size: clamp(28px, 7.8vw, 34px); letter-spacing: -.9px; }
-  .launch-view .landing-subtitle { max-width: 320px; margin-top: 9px; font-size: 12px; line-height: 1.65; }
-  .launch-view .landing-cards { grid-template-columns: 1fr 1fr; grid-template-rows: 172px 125px; gap: 10px; margin-top: 23px; }
-  .launch-view .landing-card { padding: 16px; border-radius: 14px; }
-  .launch-view .landing-research { grid-column: 1 / 3; grid-row: 1; padding: 19px 20px; }
-  .launch-view .landing-card-category { font-size: 8px; letter-spacing: .8px; }
-  .launch-view .landing-card-title { margin-top: 7px; font-size: 16px; line-height: 1.3; letter-spacing: -.4px; }
-  .launch-view .landing-research .landing-card-title { margin-top: 9px; font-size: 22px; }
-  .launch-view .landing-card-copy { max-width: 100%; font-size: 11px; line-height: 1.6; margin-top: 6px; }
-  .launch-view .landing-research .landing-card-copy { max-width: 65%; }
-  .launch-view .landing-card-action { gap: 8px; font-size: 10px; }
-  .launch-view .landing-card-arrow { top: auto; bottom: 12px; right: 12px; width: 17px; height: 17px; }
-  .launch-view .landing-card-arrow svg { width: 13px; height: 13px; }
-  .launch-view .instrument-research { width: 150px; height: 153px; right: -7px; bottom: -8px; background-size: 450px auto; opacity: .45; }
-  .launch-view .instrument-guides { width: 74px; height: 70px; right: -1px; bottom: -5px; background-size: 222px auto; opacity: .19; }
-  .launch-view .instrument-handoff { width: 78px; height: 66px; right: -3px; bottom: -5px; background-size: 234px auto; opacity: .2; }
-  .launch-view .research-art { width: 174px; height: 154px; right: -14px; bottom: -12px; opacity: .3; }
-  .launch-view .guides-art, .launch-view .handoff-art { width: 85px; height: 79px; right: -7px; bottom: -13px; opacity: .2; }
-  .launch-view .landing-card:hover .generated-instrument { opacity: .45; }
-}
-@media (max-width: 360px) {
-  .launch-view .landing-card-title { font-size: 15px; }
-  .launch-view .landing-research .landing-card-title { font-size: 21px; }
-  .launch-view .landing-card { padding: 14px; }
-  .launch-view .landing-research { padding: 18px; }
-  .launch-view .landing-research .landing-card-copy { max-width: 70%; }
+  .main-area .launch-view { padding-top: 28px; }
+  .launch-view .launch-inner h1 { font-size: clamp(26px, 7.4vw, 32px); letter-spacing: -.8px; }
+  .launch-view .landing-subtitle { font-size: 13.5px; }
+  .home-sections { gap: 24px; margin-top: 26px; }
+  .home-starter-image { flex-basis: 64px; height: 64px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .launch-view .landing-card, .launch-view .landing-card-arrow, .launch-view .landing-card-action svg, .launch-view .generated-instrument { transition: none; }
+  .home-section-link svg, .home-starter-image img { transition: none; }
 }

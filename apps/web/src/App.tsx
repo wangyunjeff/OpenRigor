@@ -14,6 +14,7 @@ import type { RunEvent, RunSnapshot } from "@openrigor/protocol";
 import { gsap } from "gsap";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   Archive,
   Download,
@@ -23,7 +24,6 @@ import {
   BookOpen,
   BrainCircuit,
   Check,
-  ChevronRight,
   ChevronDown,
   ChevronsUpDown,
   CircleUserRound,
@@ -33,8 +33,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
-  Users,
-  Sparkles,
+  SquarePen,
   CircleHelp,
   Clock3,
   Command,
@@ -76,6 +75,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "./components/ui/dropdown-menu";
 import {
@@ -103,6 +103,7 @@ import { ComposerPalette, ExecutionSelector, type ComposerPaletteItem } from "./
 import {
   companionVisuals,
   ExamplePreviewArt,
+  HomeSections,
   HomeView,
   type ExampleTask,
   type TabId
@@ -141,7 +142,7 @@ import {
 import { parseRunStreamEvent, requestRunStart } from "./run-client";
 import { isRunStatus, parseRecentTasks, rememberRecentTask, serializeRecentTasks, type RecentTask } from "./recent-tasks";
 import { loadQueuedFollowups, persistQueuedFollowups, queueMatchesConversation, acknowledgeQueuedFollowup, appendQueuedFollowup, attachmentReferences, maxQueuedFollowups, removeQueuedFollowup, type QueuedAttachment, type QueuedFollowup } from "./queued-followups";
-import { WorkspacePanel as ProductWorkspacePanel, type WorkspacePanelId, type WorkspaceProject, type WorkspaceSkill, type WorkspaceKnowledge } from "./features/workspace";
+import { WorkspacePanel as ProductWorkspacePanel, panelIcons, panelTitles, type WorkspacePanelId, type WorkspaceProject, type WorkspaceSkill, type WorkspaceKnowledge } from "./features/workspace";
 import { composerDraftKey, draftMatchesExecutionContext } from "./composer-drafts";
 import { useComposerDraft } from "./use-composer-draft";
 import { isComposerComposing } from "./composer-keyboard";
@@ -727,6 +728,12 @@ export function App(): ReactElement {
     ? activeProjectId === undefined ? activeTask?.projectId ?? null : activeProjectId
     : selectedProject?.id ?? null;
   const navigationProject = workspace?.projects.find((project) => project.id === navigationProjectId) ?? null;
+  function startNewTask(): void {
+    if (navigationProjectId && !navigationProject) { setError("Project details are unavailable. Wait for the project to load or choose a project before starting a new task."); return; }
+    resetWorkspace(navigationProject);
+    selectProject(navigationProject);
+  }
+  const homeTasks = [...recentTasks].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 4);
   const visibleRecentTasks = recentTasks
     .filter((task) => navigationProjectId ? task.projectId === navigationProjectId : !task.projectId)
     .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
@@ -1137,6 +1144,18 @@ export function App(): ReactElement {
     }
   }
 
+  /** Starting points fill the composer for editing; only Send starts a run. */
+  function useStarterPrompt(nextPrompt: string): void {
+    updatePrompt(nextPrompt);
+    window.setTimeout(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      textarea.scrollIntoView({ block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }, 0);
+  }
+
   function useExample(example: ExampleTask): void {
     navigatePage(null);
     setPrompt(example.prompt);
@@ -1244,23 +1263,21 @@ export function App(): ReactElement {
     {sidebarOpen ? <button type="button" className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" /> : null}
     <aside className={sidebarOpen ? "sidebar sidebar-open" : "sidebar"} aria-label="Main navigation">
       <div className="brand-row">
-        <button className="account-switcher" type="button" onClick={() => navigatePage("workspace")}><span className="workspace-symbol" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 7h10a8 8 0 0 1 0 16H8V7Z" /><path d="M8 15h10M15 15l9 10M12 7v16" /></svg></span><span className="workspace-brand"><strong>OpenRigor</strong><small>Personal workspace</small></span><ChevronsUpDown aria-hidden="true" /></button>
+        <button className="account-switcher" type="button" onClick={startNewTask} title="Home"><span className="workspace-symbol" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M8 7h10a8 8 0 0 1 0 16H8V7Z" /><path d="M8 15h10M15 15l9 10M12 7v16" /></svg></span><span className="workspace-brand"><strong>OpenRigor</strong><small>Local research agent</small></span></button>
         <IconTooltip label="Toggle sidebar"><button type="button" className="icon-control sidebar-toggle" onClick={() => { if (window.innerWidth <= 900) setSidebarOpen(false); else { setSidebarCollapsed(true); window.localStorage.setItem("openrigor.sidebar-collapsed", "true"); } }} aria-label="Toggle sidebar"><PanelLeftClose aria-hidden="true" /></button></IconTooltip>
       </div>
       <nav className="nav-list" aria-label="Product navigation">
-        <button type="button" className={!page && !conversation ? "nav-item active" : "nav-item"} onClick={() => { if (navigationProjectId && !navigationProject) { setError("Project details are unavailable. Wait for the project to load or choose a project before starting a new task."); return; } const project = navigationProject; resetWorkspace(project); selectProject(project); }}><Sparkles aria-hidden="true" /><span>New task</span></button>
-        <button type="button" className={page === "images" ? "nav-item active" : "nav-item"} onClick={() => navigatePage("images")}><ImagePlus aria-hidden="true" /><span>Image Studio</span></button>
-        <button type="button" className={page === "agent" ? "nav-item active" : "nav-item"} onClick={() => navigatePage("agent")}><BrainCircuit aria-hidden="true" /><span>Agent</span></button>
-        <button type="button" className={page === "workspace" ? "nav-item active" : "nav-item"} onClick={() => navigatePage("workspace")}><Users aria-hidden="true" /><span>Workspace</span></button>
-        <button type="button" className={page === "skills" ? "nav-item active" : "nav-item"} onClick={() => navigatePage("skills")}><WandSparkles aria-hidden="true" /><span>Skill Market</span></button>
+        <button type="button" className={!page && !conversation ? "nav-item active" : "nav-item"} onClick={startNewTask}><SquarePen aria-hidden="true" /><span>New task</span></button>
         <button type="button" className={page === "search" ? "nav-item active" : "nav-item"} onClick={() => navigatePage("search")}><Search aria-hidden="true" /><span>Search</span><kbd>⌘ K</kbd></button>
+        <button type="button" className={page === "images" ? "nav-item active" : "nav-item"} onClick={() => navigatePage("images")}><ImagePlus aria-hidden="true" /><span>Image Studio</span></button>
+        <button type="button" className={page === "skills" ? "nav-item active" : "nav-item"} onClick={() => navigatePage("skills")}><WandSparkles aria-hidden="true" /><span>Skill Market</span></button>
       </nav>
       <div className="sidebar-scroll">
         <section className="sidebar-section">
-          <button type="button" className="sidebar-label" onClick={() => setProjectsExpanded((previous) => !previous)} aria-expanded={projectsExpanded}><span>Projects</span><ChevronDown className={projectsExpanded ? "" : "is-collapsed"} aria-hidden="true" /></button>
+          <div className="sidebar-label-row"><button type="button" className="sidebar-label" onClick={() => setProjectsExpanded((previous) => !previous)} aria-expanded={projectsExpanded}><span>Projects</span><ChevronDown className={projectsExpanded ? "" : "is-collapsed"} aria-hidden="true" /></button><IconTooltip label="New project"><button type="button" className="sidebar-label-action" onClick={openNewProject} aria-label="New project"><Plus aria-hidden="true" /></button></IconTooltip></div>
           {projectsExpanded ? <>
             {workspace?.projects.map((project) => <button type="button" key={project.id} className={navigationProjectId === project.id ? "project-item selected" : "project-item"} onClick={() => { selectProject(project); resetWorkspace(project); }}><Folder aria-hidden="true" /><span><strong>{project.name}</strong><small>{project.description || project.path}</small></span></button>)}
-            <button type="button" className="project-item new-project" onClick={openNewProject}><FolderPlus aria-hidden="true" /><span><strong>New project</strong><small>One directory, all related tasks</small></span></button>
+            {!workspace?.projects.length ? <button type="button" className="sidebar-empty-action" onClick={openNewProject}>Create a project</button> : null}
           </> : null}
         </section>
         <section className="sidebar-section recent-section">
@@ -1270,12 +1287,14 @@ export function App(): ReactElement {
         </section>
       </div>
       <div className="sidebar-bottom">
-        <button type="button" className="workspace-footer-link" onClick={() => navigatePage("guides")}><CircleHelp aria-hidden="true" /><span><strong>Make yourself at home</strong><small>Explore your local agent workspace</small></span></button>
-        <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="profile"><span className="avatar">{(workspace?.profile.displayName ?? "Jeff").slice(0, 1).toUpperCase()}</span><strong>{workspace?.profile.displayName ?? "Jeff"}</strong><ChevronsUpDown aria-hidden="true" /></button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="profile"><span className="avatar" aria-hidden="true">{(workspace?.profile.displayName ?? "Jeff").slice(0, 1).toUpperCase()}</span><span className="profile-copy"><strong>{workspace?.profile.displayName ?? "Jeff"}</strong><small>Settings and help</small></span><ChevronsUpDown aria-hidden="true" /></button></DropdownMenuTrigger>
           <DropdownMenuContent className="radix-menu profile-menu" align="start" side="top" sideOffset={8}>
             <DropdownMenuLabel className="menu-caption">OpenRigor · Local workspace</DropdownMenuLabel>
+            <DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("agent")}><BrainCircuit aria-hidden="true" /><span>Agent and instructions</span></DropdownMenuItem>
+            <DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("workspace")}><HardDrive aria-hidden="true" /><span>Workspace and usage</span></DropdownMenuItem>
             <DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("settings")}><Settings aria-hidden="true" /><span>Settings</span></DropdownMenuItem>
-            <DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("workspace")}><Users aria-hidden="true" /><span>Workspace</span></DropdownMenuItem>
+            <DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("guides")}><CircleHelp aria-hidden="true" /><span>Guides</span></DropdownMenuItem>
+            <DropdownMenuSeparator className="menu-separator" />
             <DropdownMenuLabel className="menu-caption">Appearance</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={theme} onValueChange={(value) => selectTheme(value as ThemePreference)}>{themeOptions.map((option) => { const Icon = themeIcons[option.value]; return <DropdownMenuRadioItem className="radio-menu-item" value={option.value} key={option.value}><Icon aria-hidden="true" /><span>{option.value === "system" ? "System" : option.value === "dark" ? "Dark" : "Light"}</span></DropdownMenuRadioItem>; })}</DropdownMenuRadioGroup>
           </DropdownMenuContent>
@@ -1287,8 +1306,8 @@ export function App(): ReactElement {
       <header className="main-header">
         <div className="header-left">
           <IconTooltip label="Toggle sidebar"><button type="button" className="icon-control main-sidebar-toggle" onClick={() => { if (window.innerWidth <= 900) setSidebarOpen(true); else { setSidebarCollapsed((previous) => !previous); window.localStorage.setItem("openrigor.sidebar-collapsed", String(!sidebarCollapsed)); } }} aria-label="Open navigation"><PanelLeftOpen aria-hidden="true" /></button></IconTooltip>
+          {page && !isModalPage ? (() => { const PageIcon = panelIcons[page]; const backPage = page === "research" || page === "guides" || page === "handoff"; return <div className="header-page-title">{backPage ? <button type="button" className="header-back" onClick={closeProductPanel}><ArrowLeft aria-hidden="true" />Back</button> : <PageIcon aria-hidden="true" />}<h1 className="header-title">{panelTitles[page]}</h1></div>; })() : null}
           {conversation && !page ? <><span className="header-divider" /><div className="header-title-group"><h1 className="header-title" title={conversationTitle}>{conversationTitle}</h1><small>{snapshot ? `${composerProject ? `${composerProject.name} · ` : ""}${modelLabel(snapshot.model)} · ${formatTime(snapshot.updatedAt)}` : "OpenRigor"}</small></div></> : null}
-          {!conversation && !page ? <div className="header-workspace-name"><span>Workspace</span><ChevronRight aria-hidden="true" /><strong>Personal</strong></div> : null}
         </div>
         <div className="header-actions"><PreviewLauncher />
           {conversation && !page && (isRunning || connection === "closed" || connection === "connecting") ? <span className={`connection connection-${connection}`} data-working={isRunning && connection === "open"} role="status" aria-live="polite" title={runtimeLabel}>{isRunning && connection === "open" && snapshot && isActivelyWorkingStatus(snapshot.status) ? <ActivityGlyph animated /> : <span className="status-dot" />}{isRunning && snapshot && connection === "open" ? snapshot.status === "waiting_user" ? "Needs input" : snapshot.status === "cancelling" ? "Stopping" : snapshot.status === "queued" ? "Queued" : "Working" : connectionLabel}</span> : null}
@@ -1303,15 +1322,15 @@ export function App(): ReactElement {
       </div>}
       {(!page || isModalPage || ["research", "guides", "handoff"].includes(page)) ? <div className="composer-region"><div className="composer-wrap">
         {conversationQueue.length ? <div className="queued-messages" aria-label="Queued follow-up messages">{conversationQueue.map((message, index) => <div key={message.id}><Clock3 aria-hidden="true" /><span><small>{message.error ? `Could not send: ${message.error}` : message.predecessorRunId !== snapshot?.runId && index === 0 ? "Waiting for the original preceding turn" : `Queued ${index + 1}`}</small>{message.prompt}</span>{message.error ? <button type="button" aria-label="Retry queued message" onClick={() => setQueuedMessages((previous) => previous.map((item) => { if (item.id !== message.id) return item; const { error: _error, ...retry } = item; return retry; }))}><ArrowUp aria-hidden="true" /></button> : null}<button type="button" onClick={() => setQueuedMessages((previous) => removeQueuedFollowup(previous, message.id))} aria-label="Remove queued message"><X aria-hidden="true" /></button></div>)}</div> : null}
-        {!conversation ? <div className="composer-context-row"><button type="button" onClick={() => navigatePage("workspace")}><HardDrive aria-hidden="true" /><span>Local workspace</span></button><DropdownMenu><DropdownMenuTrigger asChild><button type="button"><Folder aria-hidden="true" /><span>{composerProject?.name ?? (conversation && activeProjectId ? "Project task" : "Choose a project")}</span><ChevronDown aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu project-select-menu" align="start" side="top" sideOffset={8}><DropdownMenuLabel className="menu-caption">Projects</DropdownMenuLabel><DropdownMenuItem className="simple-menu-item" onSelect={() => chooseComposerProject(null)}><Folder aria-hidden="true" /><span>Standalone task</span>{!composerProject ? <Check aria-hidden="true" /> : null}</DropdownMenuItem>{workspace?.projects.map((project) => <DropdownMenuItem className="simple-menu-item" key={project.id} onSelect={() => chooseComposerProject(project)}><Folder aria-hidden="true" /><span>{project.name}</span>{composerProject?.id === project.id ? <Check aria-hidden="true" /> : null}</DropdownMenuItem>)}<DropdownMenuItem className="simple-menu-item" onSelect={openNewProject}><FolderPlus aria-hidden="true" /><span>New project</span></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div> : null}
         <ComposerPalette open={Boolean(paletteMode)} mode={paletteMode} items={paletteItems} activeIndex={paletteIndex} selected={paletteMode === "skill" ? selectedSkills : selectedContexts} onSelect={selectPaletteItem} />
         <input ref={attachmentInputRef} type="file" multiple hidden onChange={(event) => { void attachFiles(event.target.files); }} />
         <PromptInput className="composer" onSubmit={async (message) => { await startRun(message.text); }}>
           {(selectedSkills.length || hasExplicitContexts || attachments.length) ? <div className="composer-chips">{selectedContexts.filter((id) => id !== "workspace").map((id) => { const item = availableContexts.find((context) => context.id === id); return item ? <ComposerChip key={id} icon={Library} label={item.label} onRemove={() => setSelectedContexts((current) => current.filter((value) => value !== id))} /> : null; })}{selectedSkills.map((id) => { const item = availableSkills.find((skill) => skill.id === id); return item ? <ComposerChip key={id} icon={Layers3} label={item.label} onRemove={() => setSelectedSkills((current) => current.filter((value) => value !== id))} /> : null; })}{attachments.map((attachment) => <ComposerChip key={attachment.id} icon={Paperclip} label={attachment.name} onRemove={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))} />)}</div> : null}
-          <PromptInputBody><PromptInputTextarea ref={textareaRef} value={prompt} onChange={(event) => updatePrompt(event.target.value)} onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); void attachFiles(event.clipboardData.files); } }} onKeyDown={handleComposerKeyDown} onFocus={() => { const token = prompt.match(/(?:^|\s)([\/@])[^\s]*$/); if (token) setPaletteMode(token[1] === "/" ? "skill" : "context"); }} placeholder={isRestoringTask ? "Loading task…" : uploading ? "Uploading attachment…" : isRunning ? "Add a follow-up. It will run when the current task finishes…" : "Describe your task, / for commands and skills, @ for files, tasks & knowledge"} rows={2} aria-label="Task description" aria-controls={paletteMode ? `composer-palette-${paletteMode}` : undefined} aria-activedescendant={paletteMode && paletteItems[paletteIndex] ? `composer-${paletteMode}-${paletteItems[paletteIndex].id}` : undefined} /></PromptInputBody>
-          <PromptInputFooter className="composer-toolbar"><PromptInputTools className="composer-left"><DropdownMenu><DropdownMenuTrigger asChild><button ref={addMenuTriggerRef} type="button" className="icon-tool" aria-label="Add" title="Add"><Plus aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu add-menu" align="start" side="top" sideOffset={10}><DropdownMenuItem className="simple-menu-item" onSelect={() => attachmentInputRef.current?.click()}><Paperclip aria-hidden="true" /><span><strong>Upload files</strong><small>Attach local documents or images</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("knowledge", addMenuTriggerRef.current)}><Library aria-hidden="true" /><span><strong>Add context</strong><small>Workspace files and sources</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => { updatePrompt(`${prompt}${prompt && !prompt.endsWith(" ") ? " " : ""}/`); window.setTimeout(() => textareaRef.current?.focus(), 0); }}><WandSparkles aria-hidden="true" /><span><strong>Use a skill</strong><small>Specialized agent workflows</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("images")}><ImagePlus aria-hidden="true" /><span><strong>Generate an image</strong><small>Open image studio</small></span></DropdownMenuItem></DropdownMenuContent></DropdownMenu><ExecutionSelector runtimeModels={runtimeModels} routing={routing} model={model} effort={effort} mode={mode} onRoutingChange={selectRouting} onModelChange={selectModel} onEffortChange={selectEffort} onModeChange={selectRunMode} /></PromptInputTools><div className="composer-right">{isRunning && prompt.trim() ? <button type="submit" className="queue-button" disabled={uploading || isRestoringTask || !isComposerContextReady} aria-label="Queue follow-up"><ArrowUp aria-hidden="true" /></button> : null}{isRunning ? <button ref={actionButtonRef} type="button" className="stop-button" onClick={() => void cancelRun()} disabled={snapshot?.status === "cancelling"} aria-label="Stop task"><Square aria-hidden="true" /><span>{snapshot?.status === "cancelling" ? "Stopping" : "Stop"}</span></button> : <button ref={actionButtonRef} type="submit" className="send-button" disabled={isStarting || isRestoringTask || !isComposerContextReady || uploading || !prompt.trim()} aria-label="Send task"><ArrowUp aria-hidden="true" /></button>}</div></PromptInputFooter>
+          <PromptInputBody><PromptInputTextarea ref={textareaRef} value={prompt} onChange={(event) => updatePrompt(event.target.value)} onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); void attachFiles(event.clipboardData.files); } }} onKeyDown={handleComposerKeyDown} onFocus={() => { const token = prompt.match(/(?:^|\s)([\/@])[^\s]*$/); if (token) setPaletteMode(token[1] === "/" ? "skill" : "context"); }} placeholder={isRestoringTask ? "Loading task…" : uploading ? "Uploading attachment…" : isRunning ? "Queue a follow-up. It runs when this task finishes." : conversation ? "Ask a follow-up" : "Ask a question or describe a task"} rows={2} aria-label="Task description" aria-controls={paletteMode ? `composer-palette-${paletteMode}` : undefined} aria-activedescendant={paletteMode && paletteItems[paletteIndex] ? `composer-${paletteMode}-${paletteItems[paletteIndex].id}` : undefined} /></PromptInputBody>
+          <PromptInputFooter className="composer-toolbar"><PromptInputTools className="composer-left"><DropdownMenu><DropdownMenuTrigger asChild><button ref={addMenuTriggerRef} type="button" className="icon-tool" aria-label="Add" title="Add"><Plus aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu add-menu" align="start" side="top" sideOffset={10}><DropdownMenuItem className="simple-menu-item" onSelect={() => attachmentInputRef.current?.click()}><Paperclip aria-hidden="true" /><span><strong>Upload files</strong><small>Attach local documents or images</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => openWorkspaceDialog("knowledge", addMenuTriggerRef.current)}><Library aria-hidden="true" /><span><strong>Add context</strong><small>Workspace files and sources</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => { updatePrompt(`${prompt}${prompt && !prompt.endsWith(" ") ? " " : ""}/`); window.setTimeout(() => textareaRef.current?.focus(), 0); }}><WandSparkles aria-hidden="true" /><span><strong>Use a skill</strong><small>Specialized agent workflows</small></span></DropdownMenuItem><DropdownMenuItem className="simple-menu-item" onSelect={() => navigatePage("images")}><ImagePlus aria-hidden="true" /><span><strong>Generate an image</strong><small>Open image studio</small></span></DropdownMenuItem></DropdownMenuContent></DropdownMenu><ExecutionSelector runtimeModels={runtimeModels} routing={routing} model={model} effort={effort} mode={mode} onRoutingChange={selectRouting} onModelChange={selectModel} onEffortChange={selectEffort} onModeChange={selectRunMode} />{!conversation ? <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="composer-project-trigger" title="Project for this task"><Folder aria-hidden="true" /><span>{composerProject?.name ?? "No project"}</span><ChevronDown aria-hidden="true" /></button></DropdownMenuTrigger><DropdownMenuContent className="radix-menu project-select-menu" align="start" side="top" sideOffset={8}><DropdownMenuLabel className="menu-caption">Run this task in</DropdownMenuLabel><DropdownMenuItem className="simple-menu-item" onSelect={() => chooseComposerProject(null)}><Folder aria-hidden="true" /><span><strong>No project</strong><small>The local workspace directory</small></span>{!composerProject ? <Check aria-hidden="true" /> : null}</DropdownMenuItem>{workspace?.projects.map((project) => <DropdownMenuItem className="simple-menu-item" key={project.id} onSelect={() => chooseComposerProject(project)}><Folder aria-hidden="true" /><span><strong>{project.name}</strong>{project.description ? <small>{project.description}</small> : null}</span>{composerProject?.id === project.id ? <Check aria-hidden="true" /> : null}</DropdownMenuItem>)}<DropdownMenuSeparator className="menu-separator" /><DropdownMenuItem className="simple-menu-item" onSelect={openNewProject}><FolderPlus aria-hidden="true" /><span><strong>New project</strong></span></DropdownMenuItem></DropdownMenuContent></DropdownMenu> : null}</PromptInputTools><div className="composer-right">{isRunning && prompt.trim() ? <button type="submit" className="queue-button" disabled={uploading || isRestoringTask || !isComposerContextReady} aria-label="Queue follow-up"><ArrowUp aria-hidden="true" /></button> : null}{isRunning ? <button ref={actionButtonRef} type="button" className="stop-button" onClick={() => void cancelRun()} disabled={snapshot?.status === "cancelling"} aria-label="Stop task"><Square aria-hidden="true" /><span>{snapshot?.status === "cancelling" ? "Stopping" : "Stop"}</span></button> : <button ref={actionButtonRef} type="submit" className="send-button" disabled={isStarting || isRestoringTask || !isComposerContextReady || uploading || !prompt.trim()} aria-label="Send task"><ArrowUp aria-hidden="true" /></button>}</div></PromptInputFooter>
         </PromptInput>
       </div>{!conversation ? <p className="composer-hint"><span><kbd>/</kbd> Skills <span>·</span> <kbd>@</kbd> Context</span><span><kbd>↵</kbd> Send <span>·</span> <kbd>⇧ ↵</kbd> New line</span></p> : null}</div> : null}
+      {!conversation && !page ? <HomeSections tasks={homeTasks} onOpenTask={(rootRunId) => { const task = recentTasks.find((item) => item.rootRunId === rootRunId); if (task) void openRecentTask(task); }} onUseStarter={useStarterPrompt} onOpenSection={(section) => navigatePage(section)} /> : null}
     </main></PreviewLayout>
     {isModalPage ? productPanelView : null}
     <Dialog open={Boolean(renamingTask)} onOpenChange={(open) => { if (!open) setRenamingTask(null); }}><DialogContent className="dialog-content rename-task-dialog" showCloseButton={false}><DialogTitle className="dialog-title">Rename task</DialogTitle><DialogDescription className="dialog-description">Give this conversation a name you can find later.</DialogDescription><form onSubmit={(event) => { event.preventDefault(); if (!renamingTask || !taskTitle.trim()) return; setSavingTaskTitle(true); void updateTask(renamingTask, { title: taskTitle.trim() }).then(() => setRenamingTask(null)).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Unable to rename task")).finally(() => setSavingTaskTitle(false)); }}><input autoFocus aria-label="Task title" value={taskTitle} maxLength={200} onChange={(event) => setTaskTitle(event.target.value)} /><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setRenamingTask(null)}>Cancel</button><button type="submit" className="primary-button" disabled={savingTaskTitle || !taskTitle.trim()}>{savingTaskTitle ? "Saving…" : "Save"}</button></div></form></DialogContent></Dialog>

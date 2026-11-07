@@ -106,7 +106,6 @@ export function TaskSurface({ conversations, projects = [], projectId, onOpenRun
   }
 
   return <section className={`task-surface${compact ? " is-compact" : ""}`} aria-label={projectId ? "Project tasks" : "Task library"}>
-    {!compact ? <div className="task-surface-heading"><div><span className="task-surface-eyebrow">YOUR RESEARCH, WITHIN REACH</span><h2>Find your next thread.</h2><p>Search task names, prompts, and saved answers.</p></div></div> : null}
     <div className="task-surface-search-row"><label className="task-surface-search"><Search aria-hidden="true" /><input ref={searchRef} autoFocus={!compact} aria-label={projectId ? "Search project tasks" : "Search all tasks"} placeholder={projectId ? "Search this project's tasks…" : "Search tasks and answers…"} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
       if (event.nativeEvent.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape" && query) { event.preventDefault(); setQuery(""); }

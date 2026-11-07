@@ -1042,3 +1042,47 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 .composer-wrap .composer textarea:focus-visible { outline: none; }
 
 .header-title-group .header-title { margin: 0; line-height: 1.35; }
+
+/* Home: the composer shares the greeting's column and sits directly under it. */
+.home-mode .composer-region { margin-top: 26px; padding: 0 var(--reading-gutter) 0; }
+.home-mode .composer-region .composer-wrap, .home-mode .composer-region .composer-hint { width: min(var(--reading-width), 100%); }
+
+/* Composer project picker sits with the model picker: both describe how this task runs. */
+.composer-project-trigger { display: inline-flex; min-width: 0; max-width: 220px; height: 26px; align-items: center; gap: 5px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); padding: 2px 6px; font-size: 12px; }
+.composer-project-trigger:hover, .composer-project-trigger[data-state="open"] { background: var(--fill-hover); color: var(--text-soft); }
+.composer-project-trigger > svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.composer-project-trigger > svg:last-child { width: 11px; height: 11px; }
+.composer-project-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-left { flex-wrap: nowrap; min-width: 0; }
+.composer-left .model-trigger { flex: 0 0 auto; }
+.project-select-menu .simple-menu-item > span { display: grid; gap: 2px; }
+.project-select-menu .simple-menu-item small { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Sidebar: destinations up top, settings behind the profile menu. */
+.sidebar-label-row { display: flex; align-items: center; gap: 2px; padding-right: 4px; }
+.sidebar-label-row .sidebar-label { flex: 1; width: auto; }
+.sidebar-label-action { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--faint); padding: 0; opacity: .8; transition: background .15s ease, color .15s ease, opacity .15s ease; }
+.sidebar-label-action:hover { background: var(--fill-hover); color: var(--text); opacity: 1; }
+.sidebar-label-action svg { width: 14px; height: 14px; }
+.sidebar-empty-action { display: block; width: 100%; border: 0; border-radius: 9px; background: transparent; color: var(--faint); padding: 7px 8px; font-size: 12px; text-align: left; }
+.sidebar-empty-action:hover { background: var(--fill-hover); color: var(--text-soft); }
+.profile { min-height: 44px; }
+.profile .profile-copy { display: grid; min-width: 0; flex: 1; gap: 1px; text-align: left; }
+.profile .profile-copy strong { margin: 0; overflow: hidden; color: var(--text-soft); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.profile .profile-copy small { color: var(--faint); font-size: 11px; }
+.nav-item kbd { font-size: 11px; }
+:is(.sidebar-label-action, .sidebar-empty-action):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+
+/* Inline product pages: one bar. The page title lives in the app header and
+   the panel's own header is hidden; dialogs keep their header. */
+.product-panel-host .ws-panel:not(.ws-panel-modal) > .ws-page-header { display: none; }
+.header-page-title { display: flex; min-width: 0; align-items: center; gap: 10px; color: var(--muted); }
+.header-page-title > svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--muted); }
+.header-page-title .header-title { margin: 0; overflow: hidden; color: var(--text); font-size: 14px; font-weight: 500; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.header-back { display: inline-flex; align-items: center; gap: 6px; border: 0; border-right: 1px solid var(--line-strong); border-radius: 0; background: transparent; color: var(--muted); padding: 2px 12px 2px 0; font-size: 13px; }
+.header-back:hover { color: var(--text); }
+.header-back svg { width: 15px; height: 15px; }
+.header-back:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* Pages that scroll above a composer fade into it instead of being cut off. */
+.app-shell:not(.home-mode) .product-panel-host + .composer-region::before { content: ""; position: absolute; left: 0; right: 0; top: -32px; height: 32px; background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none; }

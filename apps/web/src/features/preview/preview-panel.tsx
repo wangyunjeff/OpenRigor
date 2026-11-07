@@ -17,7 +17,7 @@ import "./preview-panel.css";
 export function PreviewLauncher(): ReactElement | null {
   const preview = usePreview();
   if (!preview) return null;
-  return <button type="button" className="preview-launcher" onClick={preview.open ? preview.hide : preview.show} title={preview.open ? "Close the workspace viewer" : "Open the workspace viewer"} aria-expanded={preview.open}><PanelRight aria-hidden="true" /><span>Workspace</span>{preview.latestFiles.length > 0 && <small>{preview.latestFiles.length}<span className="sr-only"> new {preview.latestFiles.length === 1 ? "file" : "files"}</span></small>}</button>;
+  return <button type="button" className="preview-launcher" onClick={preview.open ? preview.hide : preview.show} title={preview.open ? "Close files" : "Open files, sources, and pages from this task"} aria-expanded={preview.open}><PanelRight aria-hidden="true" /><span>Files</span>{preview.latestFiles.length > 0 && <small>{preview.latestFiles.length}<span className="sr-only"> new {preview.latestFiles.length === 1 ? "file" : "files"}</span></small>}</button>;
 }
 
 function ActionHint({ label, children }: { label: string; children: ReactElement }): ReactElement {
