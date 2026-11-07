@@ -91,7 +91,7 @@ export function HomeSections({ tasks, onOpenTask, onUseStarter, onOpenSection }:
         const title = task.title?.trim() || task.prompt.trim() || "Untitled task";
         return <li key={task.rootRunId}><button type="button" className="home-recent-item" onClick={() => onOpenTask(task.rootRunId)}>
           <span className={`home-recent-status tone-${status.tone}`} title={status.label}><status.Icon aria-hidden="true" /><span className="sr-only">{status.label}: </span></span>
-          <span className="home-recent-title">{task.pinned ? <Pin className="home-recent-pin" aria-label="Pinned" /> : null}{title}</span>
+          <span className="home-recent-title">{task.pinned ? <Pin className="home-recent-pin" aria-label="Pinned" /> : null}<span className="home-recent-text">{title}</span></span>
           <time dateTime={task.updatedAt} title={new Date(task.updatedAt).toLocaleString()}>{relativeTime(task.updatedAt)}</time>
         </button></li>;
       })}</ul>

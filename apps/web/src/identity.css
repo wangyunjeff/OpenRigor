@@ -1,0 +1,169 @@
+/*
+ * OpenRigor identity: a research notebook.
+ *
+ * Paper and ink, one precise cobalt accent, a serif for titles and the
+ * headings of answers, a sans for the interface, and a true monospace for
+ * code, commands, and data. Loaded after every other stylesheet, so these
+ * tokens are the single source of truth for both themes.
+ *
+ * Every text token is checked for at least 4.5:1 contrast on every surface
+ * token of its theme.
+ */
+@import "@fontsource-variable/newsreader/index.css";
+@import "@fontsource-variable/geist-mono/index.css";
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --font-ui: "Geist Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Newsreader Variable", "Iowan Old Style", Georgia, serif;
+  --mono: "Geist Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --bg: #111214;
+  --sidebar: #0c0d0f;
+  --surface: #1a1b1e;
+  --surface-raised: #24262a;
+  --surface-soft: #151619;
+  --line: rgba(236, 234, 228, .08);
+  --line-strong: rgba(236, 234, 228, .15);
+  --text: #eeece6;
+  --text-soft: #d6d3cb;
+  --muted: #a8a59d;
+  --faint: #918e87;
+  --accent: #9aaaff;
+  --accent-strong: #b6c2ff;
+  --accent-ink: #0e1130;
+  --blue: #9aaaff;
+  --green: #7fcf9c;
+  --gold: #e3c07c;
+  --danger: #f0a097;
+
+  --header-bg: var(--bg);
+  --composer-region-bg: var(--bg);
+  --composer-bg: var(--surface);
+  --menu-bg: #1d1f22;
+  --dialog-bg: #16171a;
+  --dialog-example-bg: #16171a;
+  --input-bg: #141518;
+  --code-bg: #0d0e10;
+  --stage-bg: #16171a;
+  --fill-subtle: rgba(236, 234, 228, .028);
+  --fill-soft: rgba(236, 234, 228, .045);
+  --fill-hover: rgba(236, 234, 228, .07);
+  --fill-strong: rgba(236, 234, 228, .095);
+  --button-ink: #111214;
+  --button-hover: #ffffff;
+  --overlay: rgba(4, 5, 8, .62);
+  --focus-ring: #9aaaff;
+  --scroll-thumb: rgba(236, 234, 228, .16);
+  --grid-dot: rgba(236, 234, 228, .07);
+  --shadow-float: 0 24px 70px rgba(0, 0, 0, .45), 0 2px 10px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .03);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .02);
+  font-family: var(--font-ui);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f5ef;
+  --sidebar: #efece4;
+  --surface: #ffffff;
+  --surface-raised: #e8e4da;
+  --surface-soft: #f2efe8;
+  --line: rgba(27, 26, 23, .1);
+  --line-strong: rgba(27, 26, 23, .18);
+  --text: #1b1a17;
+  --text-soft: #35332d;
+  --muted: #56524a;
+  --faint: #68635a;
+  --accent: #2f45c8;
+  --accent-strong: #2437a8;
+  --accent-ink: #ffffff;
+  --blue: #2f45c8;
+  --green: #2d6a44;
+  --gold: #86590f;
+  --danger: #ad3a2e;
+
+  --header-bg: var(--bg);
+  --composer-region-bg: var(--bg);
+  --composer-bg: var(--surface);
+  --menu-bg: #ffffff;
+  --dialog-bg: #faf8f3;
+  --dialog-example-bg: #ffffff;
+  --input-bg: #ffffff;
+  --code-bg: #1c1d21;
+  --stage-bg: #ece8df;
+  --fill-subtle: rgba(27, 26, 23, .025);
+  --fill-soft: rgba(27, 26, 23, .04);
+  --fill-hover: rgba(27, 26, 23, .06);
+  --fill-strong: rgba(27, 26, 23, .085);
+  --button-ink: #ffffff;
+  --button-hover: #000000;
+  --overlay: rgba(27, 26, 23, .32);
+  --focus-ring: #2f45c8;
+  --scroll-thumb: rgba(27, 26, 23, .2);
+  --grid-dot: rgba(27, 26, 23, .085);
+  --shadow-float: 0 22px 60px rgba(40, 36, 28, .12), 0 2px 8px rgba(40, 36, 28, .06), inset 0 1px 0 #ffffff;
+  --shadow-card: 0 1px 2px rgba(40, 36, 28, .06), inset 0 1px 0 #ffffff;
+}
+
+::selection { color: var(--text); background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* ── Type: serif for titles, sans for interface, mono for data ───────────── */
+.launch-view .launch-inner h1 { font-family: var(--font-serif); font-size: clamp(36px, 3.8vw, 50px); font-weight: 400; line-height: 1.1; letter-spacing: -.02em; }
+.launch-view .landing-subtitle { font-size: 15px; }
+.workspace-brand strong { font-family: var(--font-serif); font-size: 18px; font-weight: 500; letter-spacing: -.01em; }
+.ws-content-heading h2, .ws-section-heading h2, .ws-settings-content .ws-content-heading h2 { font-family: var(--font-serif); font-weight: 450; letter-spacing: -.015em; }
+.ws-content-heading h2 { font-size: clamp(28px, 2.8vw, 38px); }
+.ws-section-heading h2 { font-size: 30px; }
+.ws-empty h2 { font-family: var(--font-serif); font-size: 22px; font-weight: 450; letter-spacing: -.01em; }
+.ws-research-card h3, .ws-skill-open h2 { font-family: var(--font-serif); font-weight: 500; letter-spacing: -.005em; }
+.ws-skill-open h2 { font-size: 18px; }
+.home-section-heading h2 { color: var(--muted); font-size: 11.5px; font-weight: 550; letter-spacing: .06em; text-transform: uppercase; }
+.home-starter-copy strong { font-family: var(--font-serif); font-size: 16.5px; font-weight: 500; letter-spacing: -.005em; }
+
+/* Answers read like a report: serif headings, generous measure. */
+.conversation-turn .assistant-response-text { font-size: 15.5px; line-height: 1.75; }
+.assistant-response-text :is(h1, h2, h3) { font-family: var(--font-serif); font-weight: 500; letter-spacing: -.01em; }
+.assistant-response-text h1 { font-size: 28px; }
+.assistant-response-text h2 { font-size: 23px; }
+.assistant-response-text h3 { font-size: 18.5px; }
+.assistant-response-text h4 { font-size: 15.5px; }
+.conversation-turn .user-bubble { font-size: 15px; }
+code, pre, kbd, samp { font-family: var(--mono); }
+
+/* ── Accent: primary actions, focus, the agent mark ─────────────────────── */
+.send-button:not(:disabled) { background: var(--accent); color: var(--accent-ink); }
+.send-button:hover:not(:disabled) { background: var(--accent-strong); }
+.ws-button-primary, .ws-settings-content .ws-button-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+.ws-button-primary:hover, .ws-settings-content .ws-button-primary:hover { border-color: var(--accent-strong); background: var(--accent-strong); opacity: 1; }
+.composer-wrap:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent), var(--shadow-float); }
+.composer-wrap { border-color: var(--line-strong); background: var(--surface); box-shadow: var(--shadow-float); }
+.brand-row .account-switcher > .workspace-symbol { border-color: color-mix(in srgb, var(--accent) 30%, transparent); background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--accent); }
+
+/* ── Sidebar: ink panel with a crisp active state ───────────────────────── */
+.sidebar { border-right-color: var(--line); }
+.nav-item { color: var(--muted); }
+.nav-item.active { border-color: transparent; background: var(--fill-strong); box-shadow: none; color: var(--text); }
+.nav-item.active svg { color: var(--accent); }
+.recent-item.active { background: var(--fill-strong); }
+.recent-status.status-completed { background: var(--green); }
+
+/* ── Surfaces ───────────────────────────────────────────────────────────── */
+.home-recent-list, .home-starter, .ws-skill-card, .ws-research-card, .research-deliverable { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-card); }
+.home-recent-item:hover, .home-starter:hover { background: color-mix(in srgb, var(--surface) 92%, var(--accent)); }
+.ws-skill-card:hover { background: var(--surface); border-color: color-mix(in srgb, var(--accent) 35%, var(--line-strong)); }
+.home-starter:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line-strong)); }
+.process-plan { background: var(--surface); }
+
+/* A faint notebook grid behind the greeting; fades out before the content. */
+.home-mode .main-area { background-color: var(--bg); background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.2px); background-size: 22px 22px; background-position: 11px 11px; background-attachment: local; }
+.home-mode .main-area::before { content: ""; position: absolute; inset: 0; z-index: 0; background: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--bg) 40%, transparent) 260px, var(--bg) 520px); pointer-events: none; }
+.home-mode .main-area > * { position: relative; z-index: 1; }
+.home-mode .main-header { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .home-starter-image img { transform: none !important; }
+}
+
+.ws-skill-card footer .ws-skill-category { color: var(--faint); font-size: 11.5px; }
+.recent-item.active small, .nav-item.active small { color: var(--muted); }

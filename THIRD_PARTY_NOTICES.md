@@ -4,6 +4,8 @@ OpenRigor's original source is licensed under MIT. The web application, local AP
 
 - Vercel AI Elements component source: Apache License 2.0, <https://github.com/vercel/ai-elements>.
 - Streamdown: Apache License 2.0, <https://github.com/vercel/streamdown>.
+- Newsreader (`@fontsource-variable/newsreader`), the serif used for titles and answer headings: SIL Open Font License 1.1, <https://github.com/productiontype/Newsreader>.
+- Geist and Geist Mono (`@fontsource-variable/geist`, `@fontsource-variable/geist-mono`), the interface and monospace faces: SIL Open Font License 1.1, <https://github.com/vercel/geist-font>.
 - DOMPurify (`dompurify` 3.4.17), used for static HTML preview sanitization: dual licensed under MPL 2.0 or Apache License 2.0 (`MPL-2.0 OR Apache-2.0`), <https://github.com/cure53/DOMPurify>. The package includes both `LICENSE` and `LICENSE-MPL`.
 - Mozilla Readability (`@mozilla/readability` 0.6.0), used by the public-page text reader: Apache License 2.0, copyright (c) 2010 Arc90 Inc, <https://github.com/mozilla/readability>.
 - linkedom (`linkedom` 0.18.13), used for server-side parsing in the public-page text reader: ISC License, copyright (c) 2021 Andrea Giammarchi, @WebReflection, <https://github.com/WebReflection/linkedom>.

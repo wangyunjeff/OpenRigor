@@ -31,6 +31,7 @@
 .home-recent-status.tone-attention { color: var(--blue); }
 .home-recent-status.tone-live { color: var(--gold); }
 .home-recent-title { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-recent-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-recent-pin { width: 12px; height: 12px; flex: 0 0 auto; color: var(--muted); }
 .home-recent-item time { flex: 0 0 auto; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 

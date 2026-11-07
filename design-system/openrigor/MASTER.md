@@ -4,7 +4,7 @@
 
 **Milestone:** Desktop-first alpha
 
-**Direction:** Quiet operator console with a premium reading surface
+**Direction:** A research notebook: paper and ink, one cobalt accent, a serif for titles and findings
 
 **Updated:** 2026-11-06
 
@@ -66,40 +66,37 @@ Do not install AI Elements or prompt-kit wholesale. Do not adopt AI SDK `useChat
 
 ## Color Tokens
 
-| Role | Token | Current value |
-|---|---|---|
-| App background | `--bg` | `#1d1d1d` |
-| Sidebar | `--sidebar` | `#1a1a1a` |
-| Surface | `--surface` | `#252525` |
-| Raised surface | `--surface-raised` | `#2d2d2d` |
-| Soft surface | `--surface-soft` | `#202020` |
-| Border | `--line` | `rgba(255, 255, 255, 0.105)` |
-| Strong border | `--line-strong` | `rgba(255, 255, 255, 0.18)` |
-| Primary text | `--text` | `#f5f3ef` |
-| Secondary text | `--text-soft` | `#e3e0db` |
-| Muted text | `--muted` | `#aaa7a1` |
-| Faint metadata | `--faint` | `#7b7872` |
-| Accent | `--accent` | `#e4a274` |
-| Strong accent | `--accent-strong` | `#efb589` |
-| Accent ink | `--accent-ink` | `#2b1b12` |
-| Informational | `--blue` | `#8eb6d9` |
-| Success | `--green` | `#88c9a4` |
-| Waiting/running | `--gold` | `#e2c07d` |
-| Error/cancel | `--danger` | `#e69595` |
+Tokens live in `apps/web/src/identity.css`, which loads after every other stylesheet. Each text token keeps at least 4.5:1 contrast on every surface of its theme.
 
-The premium character comes from restrained contrast, consistent density, and a legible reading surface. Do not add gradient fields, neon glows, decorative blobs, glass cards, or a dominant single-hue palette. Warm copper is reserved for selection, focus, and product identity; semantic state colors retain their own meaning.
+| Role | Token | Dark (ink) | Light (paper) |
+|---|---|---|---|
+| App background | `--bg` | `#111214` | `#f7f5ef` |
+| Sidebar | `--sidebar` | `#0c0d0f` | `#efece4` |
+| Surface (cards, composer) | `--surface` | `#1a1b1e` | `#ffffff` |
+| Raised surface | `--surface-raised` | `#24262a` | `#e8e4da` |
+| Primary text | `--text` | `#eeece6` | `#1b1a17` |
+| Secondary text | `--text-soft` | `#d6d3cb` | `#35332d` |
+| Muted text | `--muted` | `#a8a59d` | `#56524a` |
+| Faint metadata | `--faint` | `#918e87` | `#68635a` |
+| Accent (cobalt) | `--accent` | `#9aaaff` | `#2f45c8` |
+| Text on accent | `--accent-ink` | `#0e1130` | `#ffffff` |
+| Links | `--blue` | `#9aaaff` | `#2f45c8` |
+| Success | `--green` | `#7fcf9c` | `#2d6a44` |
+| Waiting/running | `--gold` | `#e3c07c` | `#86590f` |
+| Error | `--danger` | `#f0a097` | `#ad3a2e` |
+
+Cobalt marks primary actions (send, create), focus, links, and the agent mark. Semantic colors keep their meaning. No gradients, glows, or glass; the only texture is a faint notebook dot grid behind the home greeting.
 
 ## Typography
 
-- UI and prose: `Inter`, `Noto Sans SC`, `Microsoft YaHei`, system sans-serif.
-- Code, ids, progress, and paths: `JetBrains Mono`, `Consolas`, monospace.
-- New-task title: `30px / 1.2`, weight `500`.
-- Agent answer: `15px / 1.78`.
-- User message: `14px / 1.55`, weight `500`.
-- Activity labels: `12px`; activity metadata: `10px` monospace.
-- Navigation and compact controls: `9-11px` according to hierarchy.
-- Dialog title: `16px`; dialog support text: `11px / 1.55`.
-- Letter spacing is always `0`. Do not scale font size with viewport width.
+- Titles and findings: `Newsreader` (serif) — the home greeting, page and section titles, empty-state titles, skill and workflow names, and the headings inside answers.
+- Interface and prose: `Geist`.
+- Code, commands, paths, and numbers in logs: `Geist Mono`.
+- Home greeting: serif `36-50px / 1.1`, weight 400.
+- Answer body: `15.5px / 1.75`; answer headings serif 28 / 23 / 18.5px.
+- User message: `15px`.
+- Section labels on home: `11.5px` uppercase with `.06em` tracking.
+- Do not scale body text with viewport width; only the display greeting uses a clamp.
 
 ## Geometry And Density
 
