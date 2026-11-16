@@ -45,6 +45,8 @@ export type ToolHeaderProps = {
   statusDisplay?: "badge" | "icon";
   /** Hide the disclosure chevron when the row has no details to reveal. */
   expandable?: boolean;
+  /** Replaces the built-in compact status icon, for example with an animated glyph. */
+  statusIcon?: ReactNode;
 } & (
   | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
   | {
@@ -102,6 +104,7 @@ export const ToolHeader = ({
   icon,
   statusDisplay = "badge",
   expandable = true,
+  statusIcon,
   ...props
 }: ToolHeaderProps) => {
   const derivedName =
@@ -125,7 +128,7 @@ export const ToolHeader = ({
       </div>
       <span className="tool-header-right">
         {durationText ? <span className="tool-header-duration">{durationText}</span> : null}
-        {statusDisplay === "icon" ? <span className="tool-header-status" title={label}>{compactStatusIcons[state]}<span className="sr-only">{label}</span></span> : null}
+        {statusDisplay === "icon" ? <span className="tool-header-status" title={label}>{statusIcon ?? compactStatusIcons[state]}<span className="sr-only">{label}</span></span> : null}
         {expandable ? <ChevronDownIcon className="tool-header-chevron size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" /> : <span className="tool-header-chevron-spacer" aria-hidden="true" />}
       </span>
     </CollapsibleTrigger>

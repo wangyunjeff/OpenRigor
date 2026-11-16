@@ -181,11 +181,32 @@ Browse examples -> Preview full draft -> Confirm use -> Edit in Composer -> Send
 
 ## Motion
 
+Motion explains state and continuity; it never delays the reader. The stack:
+
+- **GSAP** (`gsap`, `@gsap/react`): every timeline is scoped with `useGSAP` or `gsap.context` and has a reduced-motion path. Plugins (ScrollTrigger, SplitText) are registered once in `features/motion/motion-core.ts`.
+- **Lenis** (`lenis`): smooth wheel scrolling on the home screen and inline pages through `SmoothScrollArea`, driven by `gsap.ticker` so scroll position and ScrollTrigger update in the same frame. Keyboard, scrollbar, and touch scrolling stay native. The conversation transcript keeps native scrolling because its follow-while-streaming controller owns that position; dialogs keep native scrolling.
+- **React Bits** (`components/reactbits/`): vendored with the shadcn CLI and wrapped in `features/motion/motion-kit.tsx`. Product code uses the wrappers, never the raw components:
+
+| Wrapper | React Bits | Use |
+|---|---|---|
+| `Greeting` | SplitText | Home title comes into focus once (blur, not a mask, to keep serif descenders). |
+| `Reveal` | AnimatedContent | Sections and card groups rise in as they enter the scroll area; staggers stay under ~0.4s total. |
+| `SpotlightSurface` | SpotlightCard | Cards that open something: a soft accent light follows the pointer or keyboard focus. |
+| `TaskStatusMark`, `StepMark` | StatusMark | Task, tool, and plan state: ring, arc, check, cross. The arc spins only for work this client is streaming. |
+| `LiveLattice` | LatticeLoader | The single "working right now" indicator in the work log and live line. |
+| `Shine` | ShinyText | A sheen on live text (the work-log title, "Thinking"). Never on settled text. |
+| `StatNumber` | CountUp | Measured totals count up once when first seen. |
+| `HeroGrid` | DotGrid | The notebook grid behind the home greeting; dots lean from the pointer and settle. Static CSS grid without WebGL2 or with reduced motion. |
+| `ParallaxImage` | GSAP ScrollTrigger | Research artwork drifts inside its frame while the page scrolls. |
+
+Rules:
+
 - Menu and dialog entrances: `130-170ms`, low-distance fade/scale only.
-- Hover transitions: approximately `150-160ms`.
-- Running activity may use a restrained status pulse; avoid ambient looping animation.
-- Card hover translation is at most `-1px`.
-- Honor `prefers-reduced-motion` by reducing animation and transition duration to effectively zero.
+- Hover transitions: approximately `150-180ms`. Card hover translation is at most `-1px`.
+- Spinning or looping motion only for live work. Settled states are still.
+- Pointer effects (spotlight, dot grid) idle when nothing moves and pause off-screen.
+- Under `prefers-reduced-motion`: no Lenis, no parallax, no reveals or text splitting (content is shown immediately), static grid, plain text for `Shine`; StatusMark switches to opacity changes.
+- Animated text keeps its full accessible name; decorative motion elements are `aria-hidden` and the caller owns any live region.
 
 ## Responsive Verification
 

@@ -1086,3 +1086,39 @@ svg { display: block; width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1
 
 /* Pages that scroll above a composer fade into it instead of being cut off. */
 .app-shell:not(.home-mode) .product-panel-host + .composer-region::before { content: ""; position: absolute; left: 0; right: 0; top: -32px; height: 32px; background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none; }
+
+/* Smooth-scroll areas (Lenis, features/motion/smooth-scroll.tsx). The outer
+   element scrolls; padding lives on the inner content so Lenis measures the
+   full scroll height. */
+.home-mode .main-area { overflow: hidden; }
+.home-scroll { position: relative; flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.home-scroll-content { position: relative; min-height: 100%; padding-bottom: 8px; }
+.home-scroll-content > :not(.hero-grid) { position: relative; z-index: 1; }
+.main-header { border-bottom: 1px solid transparent; transition: border-color .2s ease; }
+.main-area:has(.home-scroll[data-scrolled]) .main-header, .main-area:has(.ws-page-scroll[data-scrolled]) .main-header { border-bottom-color: var(--line); }
+.ws-page-scroll { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.ws-page-scroll > .ws-page-body { flex: none; min-height: 100%; overflow: visible; }
+.ws-page-scroll.is-fixed { overflow: hidden; }
+.ws-page-scroll.is-fixed > .ws-page-body { height: 100%; overflow: hidden; }
+:is(.ws-panel-settings, .ws-panel-agent, .ws-panel-workspace) .ws-page-scroll > .ws-page-body { display: flex; flex-direction: column; }
+:is(.ws-panel-settings, .ws-panel-agent, .ws-panel-workspace) .ws-settings-layout { flex: 1 0 auto; }
+.recent-item > .recent-mark { width: 14px; justify-items: center; }
+@media (prefers-reduced-motion: reduce) { .main-header { transition: none; } }
+
+/* React Bits surfaces carry the card look; the controls inside are transparent. */
+.home-starter-spot { display: flex; min-width: 0; }
+.home-starter-spot > .home-starter, .home-starter-spot > .home-starter:hover { flex: 1; border-color: transparent; background: transparent; box-shadow: none; }
+.home-starter-spot:hover { transform: translateY(-1px); }
+.launch-view .home-greeting { display: block; }
+@media (prefers-reduced-motion: reduce) { .home-starter-spot:hover { transform: none; } }
+.ws-skill-spot, .ws-research-spot { display: flex; min-width: 0; border-radius: 20px; }
+.ws-research-spot { border-radius: 17px; }
+.ws-skill-spot > .ws-skill-card, .ws-research-spot > .ws-research-card { flex: 1; min-width: 0; border-color: transparent; background: transparent; box-shadow: none; }
+.ws-skill-spot > .ws-skill-card:hover { border-color: transparent; background: transparent; }
+.ws-skill-spot:hover, .ws-research-spot:hover { transform: translateY(-1px); }
+/* Research artwork drifts inside its frame (GSAP ScrollTrigger scrub on the Lenis scroller). */
+.ws-research-image.parallax-image img { height: 116%; margin-top: -8%; transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .ws-skill-spot:hover, .ws-research-spot:hover { transform: none; }
+  .ws-research-image.parallax-image img { height: 100%; margin-top: 0; }
+}

@@ -101,7 +101,6 @@
 .process-plan-mark svg { width: 12px; height: 12px; }
 .process-plan li[data-state="completed"] .process-plan-mark { color: var(--green); }
 .process-plan-mark .activity-glyph, .process-plan-mark .activity-glyph > svg { width: 14px; height: 14px; }
-.plan-current-dot { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 
 /* Rows: reasoning, tools, diffs share one trigger layout. */
 .process-step .process-row-trigger,
@@ -292,16 +291,7 @@
 .turn-footer-meta { min-width: 0; overflow: hidden; color: var(--faint); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .turn-error { flex-basis: 100%; margin: 2px 0 0; color: color-mix(in srgb, var(--danger) 80%, var(--muted)); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
 
-/* Live text shimmer: decorative only, static under reduced motion. */
-.text-shimmer {
-  background: linear-gradient(90deg, var(--text-soft) 0%, var(--text-soft) 40%, var(--faint) 50%, var(--text-soft) 60%, var(--text-soft) 100%);
-  background-size: 250% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: openrigor-shimmer 2.2s linear infinite;
-}
-@keyframes openrigor-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+/* Live text uses the React Bits ShinyText sheen (features/motion, Shine). */
 
 /* Focus */
 :is(.run-process-summary, .process-row-trigger, .process-file-open, .process-file > a, .tool-diagnostics > summary, .tool-diagnostics-body):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
@@ -316,6 +306,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .text-shimmer { animation: none; background: none; color: var(--text-soft); }
   .run-process-chevron, .process-row-chevron, .tool-diagnostics-chevron, .conversation-turn .turn-meta { transition: none; }
 }

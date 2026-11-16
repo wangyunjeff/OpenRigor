@@ -1,0 +1,35 @@
+/* Styles for the motion kit (features/motion/motion-kit.tsx). */
+
+/* Status glyph: tone sets the ink; done and failed take their semantic colors inside StatusMark. */
+.task-status-mark { display: inline-grid; flex: 0 0 auto; place-items: center; color: var(--faint); line-height: 0; }
+.task-status-mark[data-tone="live"] { color: var(--gold); }
+.task-status-mark[data-tone="attention"] { color: var(--blue); }
+.task-status-mark[data-mark="cancelled"] { color: var(--faint); }
+.task-status-mark svg { display: block; width: var(--sm-size); height: var(--sm-size); stroke-width: var(--sm-stroke); }
+
+/* Live lattice: inherits the presence color of the line it sits in. */
+.live-lattice { display: inline-flex; min-width: 0; align-items: center; color: var(--presence-color, var(--gold)); }
+.live-lattice .ll-root { color: inherit; }
+.live-lattice .ll-root > span:nth-of-type(2) { color: var(--text-soft); font-weight: 500; }
+
+/* Spotlight surfaces carry the card look; the control inside is transparent and fills them. */
+.spotlight-surface { min-width: 0; transition: transform .18s ease; }
+.spotlight-surface > :is(button, a, article) { position: relative; z-index: 0; }
+
+/* Notebook grid behind the home greeting. */
+.hero-grid { position: absolute; z-index: 0; inset: 0 0 auto 0; height: min(620px, 78vh); pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 34%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 34%, transparent 100%); }
+.hero-grid.is-static { background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.2px); background-size: 22px 22px; background-position: 11px 11px; }
+
+/* Parallax frames clip an image that is slightly taller than its frame. */
+.parallax-image { position: relative; overflow: hidden; }
+.parallax-image img { display: block; width: 100%; height: 116%; margin-top: -8%; object-fit: cover; will-change: transform; }
+
+@media (prefers-reduced-motion: reduce) {
+  .parallax-image img { height: 100%; margin-top: 0; will-change: auto; }
+  .spotlight-surface { transition: none; }
+}
+
+/* Lattice used as a glyph only (no label): keep it to its cells. */
+:is(.run-process-lattice, .run-presence-lattice) .ll-root { gap: 0; }
+:is(.run-process-lattice, .run-presence-lattice) .ll-root > span:not(:first-of-type) { display: none; }
+.run-presence-lattice { width: 22px; height: 22px; justify-content: center; }

@@ -7,7 +7,6 @@ import {
   BrainCircuit,
   Check,
   ChevronDown,
-  Circle,
   CircleAlert,
   CircleSlash,
   Clock3,
@@ -92,7 +91,8 @@ import {
   type ToolKind
 } from "./run-reading";
 import "./run-turn.css";
-import { ActivityGlyph, RunActivityIndicator, useRunActivity } from "./run-activity";
+import { RunActivityIndicator, useRunActivity } from "./run-activity";
+import { LiveLattice, Shine, StepMark, planMark, toolMark } from "../motion";
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed";
 
@@ -190,7 +190,7 @@ function ReasoningStep({ projection, isStreaming }: { projection: ReasoningProje
     <Reasoning className="openrigor-reasoning" isStreaming={isStreaming} open={open} onOpenChange={setOpen} {...(duration === undefined ? {} : { duration })}>
       <ReasoningTrigger className="process-row-trigger">
         <span className="step-icon" aria-hidden="true"><BrainCircuit /></span>
-        <span className={isStreaming ? "process-row-title text-shimmer" : "process-row-title"}>{isStreaming ? "Thinking" : duration ? `Thought for ${duration}s` : "Reasoning"}</span>
+        <span className="process-row-title">{isStreaming ? <Shine>Thinking</Shine> : duration ? `Thought for ${duration}s` : "Reasoning"}</span>
         <ChevronDown className="process-row-chevron" aria-hidden="true" />
       </ReasoningTrigger>
       <ReasoningContent className="process-reasoning-text">{projection.text}</ReasoningContent>
@@ -243,6 +243,7 @@ function ToolStep({ projection, output, nowMs, live, attention }: { projection: 
     : undefined;
   const input = !hasFailure && tool.inputSummary && tool.inputSummary.trim() !== title ? tool.inputSummary.trim() : undefined;
   const hasDetails = Boolean(output || note || hasFailure || input);
+  const mark = toolMark({ pending, live: liveTool, outcome });
 
   return <AnimatedStep className={`is-tool kind-${kind}`}>
     <Tool className={liveTool ? "openrigor-tool is-live" : "openrigor-tool"} open={hasDetails && open} onOpenChange={setOpen} data-outcome={outcome} data-kind={kind}>
@@ -254,6 +255,7 @@ function ToolStep({ projection, output, nowMs, live, attention }: { projection: 
         icon={<span className="step-icon"><Icon /></span>}
         state={state}
         statusDisplay="icon"
+        statusIcon={<StepMark mark={mark.status} tone={mark.tone} size={14} />}
         expandable={hasDetails}
         {...(statusText === undefined ? {} : { statusText })}
         {...(duration === null ? {} : { durationText: duration })}
@@ -338,7 +340,7 @@ function PlanChecklist({ plan, active }: { plan: PlanProjection; active: boolean
   return <div className="process-plan" aria-label={`Plan, ${progress.completed} of ${progress.total} steps complete`}>
     <div className="process-plan-heading"><ListChecks aria-hidden="true" /><span>Plan</span><small>{progress.completed}/{progress.total}</small></div>
     <ol>{plan.steps.map((item, index) => <li key={`${index}:${item.step}`} data-state={item.status}>
-      <span className="process-plan-mark" aria-hidden="true">{item.status === "completed" ? <Check /> : item.status === "in_progress" ? active ? <ActivityGlyph animated /> : <span className="plan-current-dot" /> : <Circle />}</span>
+      <span className="process-plan-mark" aria-hidden="true">{(() => { const mark = planMark(item.status, active); return <StepMark mark={mark.status} tone={mark.tone} size={13} />; })()}</span>
       <span>{item.step}</span>
       <span className="sr-only">{item.status === "completed" ? "Done" : item.status === "in_progress" ? "In progress" : "Pending"}</span>
     </li>)}</ol>
@@ -400,10 +402,10 @@ function RunProcess({
     <CollapsibleTrigger asChild>
       <button type="button" className="run-process-summary" aria-label={`${open ? "Hide" : "Show"} work log: ${summary.title}${summary.meta.length ? `, ${summary.meta.join(", ")}` : ""}`}>
         <span className="run-process-mark" aria-hidden="true">{live
-          ? <ActivityGlyph animated />
+          ? <LiveLattice label="" className="run-process-lattice" />
           : StatusIcon ? <StatusIcon />
           : <svg viewBox="0 0 32 32" fill="none"><path d="M8 7h10a8 8 0 0 1 0 16H8V7Z" /><path d="M8 15h10M15 15l9 10M12 7v16" /></svg>}</span>
-        <span className={live ? "run-process-title text-shimmer" : "run-process-title"}>{summary.title}</span>
+        <span className="run-process-title"><Shine active={live}>{summary.title}</Shine></span>
         {summary.meta.map((item) => <span key={item} className={/issue/.test(item) ? "run-process-meta is-issue" : "run-process-meta"}>{item}</span>)}
         <ChevronDown className="run-process-chevron" aria-hidden="true" />
       </button>

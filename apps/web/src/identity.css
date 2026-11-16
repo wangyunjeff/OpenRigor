@@ -155,11 +155,7 @@ code, pre, kbd, samp { font-family: var(--mono); }
 .home-starter:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line-strong)); }
 .process-plan { background: var(--surface); }
 
-/* A faint notebook grid behind the greeting; fades out before the content. */
-.home-mode .main-area { background-color: var(--bg); background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.2px); background-size: 22px 22px; background-position: 11px 11px; background-attachment: local; }
-.home-mode .main-area::before { content: ""; position: absolute; inset: 0; z-index: 0; background: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--bg) 40%, transparent) 260px, var(--bg) 520px); pointer-events: none; }
-.home-mode .main-area > * { position: relative; z-index: 1; }
-.home-mode .main-header { background: transparent; }
+/* The notebook grid behind the greeting is the React Bits DotGrid (features/motion, HeroGrid). */
 
 @media (prefers-reduced-motion: reduce) {
   .home-starter-image img { transform: none !important; }

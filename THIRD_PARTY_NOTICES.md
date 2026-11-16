@@ -14,6 +14,8 @@ OpenRigor's original source is licensed under MIT. The web application, local AP
 - React Resizable Panels: MIT License, <https://github.com/bvaughn/react-resizable-panels>.
 - Radix UI and supporting primitives: MIT License, <https://github.com/radix-ui/primitives>.
 - GSAP runtime: GreenSock standard no-charge license, <https://gsap.com/standard-license/>; GSAP is not relicensed as MIT by this repository.
+- Lenis (`lenis`), smooth scrolling for the home screen and inline pages: MIT License, copyright (c) darkroom.engineering, <https://github.com/darkroomengineering/lenis>.
+- React Bits components in `apps/web/src/components/reactbits/` (SplitText, AnimatedContent, SpotlightCard, StatusMark, LatticeLoader, ShinyText, CountUp, DotGrid): **MIT + Commons Clause License Condition v1.0**, copyright (c) 2026 David Haz, <https://github.com/DavidHDev/react-bits>. The full text is in `apps/web/src/components/reactbits/LICENSE.md`. They are used as part of this application; the Commons Clause forbids selling, sublicensing, or redistributing the components themselves, alone or as a library. That folder is therefore not covered by OpenRigor's MIT license.
 - jsdom (`jsdom` 30.1.3), used only by development tests of HTML preview sanitization: MIT License, <https://github.com/jsdom/jsdom>.
 
 AICSS source is not vendored. Its public examples are used only as product-design reference unless a future contribution documents explicit redistribution permission.

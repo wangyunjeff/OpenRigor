@@ -6,6 +6,7 @@ import type { ConversationRunView } from "../../conversation";
 import { presentRunActivity, type RunActivityConnection, type RunActivityPresentation } from "../../run-presentation";
 import { runActivityContext } from "./run-activity-model";
 import "./run-activity.css";
+import { LiveLattice } from "../motion";
 
 export function useRunActivity(run: ConversationRunView, connection: RunActivityConnection): { view: RunActivityPresentation; nowMs: number } {
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -56,7 +57,7 @@ export function RunActivityIndicator({ view }: { view: RunActivityPresentation }
   const showHelper = view.stale || view.state === "waiting-user" || view.state === "reconnecting" || view.state === "disconnected" || view.state === "queued";
   const showDetail = view.detail && view.detail !== view.headline;
   return <div ref={root} className="run-presence" data-state={view.state} data-animated={view.animated} data-stale={view.stale}>
-    <ActivityGlyph animated={view.animated} state={view.state} />
+    {view.state === "working" && view.animated ? <LiveLattice label="" className="run-presence-lattice" /> : <ActivityGlyph animated={view.animated} state={view.state} />}
     <div className="run-presence-copy">
       <p className="run-presence-line"><strong role="status" aria-live="polite">{view.headline}</strong>{showDetail ? <span className="run-presence-detail" title={view.detail}>{view.detail}</span> : null}</p>
       {showHelper && view.helper ? <small>{view.helper}</small> : null}
